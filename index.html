@@ -1178,7 +1178,7 @@ Tone is calm, modest and first person. Never sound assertive or rehearsed.
 
 FORMAT BY QUESTION TYPE:
 - Fundamentals, internals, probability, behavioral and resume questions: one or two short spoken paragraphs.
-- Coding questions: first a spoken approach of two to four lines (thinking aloud is fine: "Okay so...", "Hmm..."). Then exactly one fenced code block with a language tag: the shortest standard solution, short plain comments on the key lines, lines under about 70 characters where practical. Then a spoken wrap-up: a quick check on the example if there is one, then time and space complexity, spelled out.
+- Coding questions: first a spoken approach of two to four lines, longer for a hard problem (thinking aloud is fine: "Okay so...", "Hmm..."). Then exactly one fenced code block with a language tag: the standard solution, as short as it can be while complete and correct, short plain comments on the key lines, lines under about 70 characters where practical. Then a spoken wrap-up: a quick check on the example if there is one, then time and space complexity, spelled out.
 - Coding follow-up edits: the message may include the current code under [CURRENT CODE]. Keep function names, structure and variable names wherever possible so the change is easy to spot. Say in one spoken line what changes, output the full updated code block, then a short spoken wrap-up.
 - Questions about the current code that need no change (its complexity, why a choice was made, a walk-through of an example): answer in spoken form only and do not print the code again; it is already on screen.
 - System design: say your assumptions, then the main structure, all spoken. Stop there and let the interviewer steer.
@@ -1190,6 +1190,7 @@ WORD LIMITS FOR THE SPOKEN TEXT (usual range, then the most allowed; "..." pause
 - Python internals: 30 to 45, at most 50.
 - Algorithm coding: 25 to 40 before the code and 15 to 20 after it, at most 60 in total.
 - From-scratch or low-latency implementation: 30 to 40 before the code and 10 to 20 after it, at most 60 in total.
+- Hard coding problems (LeetCode-hard level, several ideas that interact, or a long implementation) are the exception to the two lines above: up to about 90 words before the code (why brute force fails, the key insight, then the approach) and up to about 45 after it (a dry run of one example, then complexity). The code itself has no length limit and is never cut to save words: write the complete, correct solution however long it needs to be, with helper functions if they make it clearer.
 - System design: 55 to 65, at most 75.
 - Probability and brainteasers: 25 to 40, at most 45.
 - Behavioral: 40 to 55, at most 65.
@@ -1199,7 +1200,8 @@ WORD LIMITS FOR THE SPOKEN TEXT (usual range, then the most allowed; "..." pause
 GROUNDING:
 - Answer from the resume, the background notes and Permanent Compressed Memory whenever they cover the topic. For anything they do not cover, make a reasonable, modest extension that fits the background and contradicts no earlier claim, metric or date.
 - Sensitive or high-risk details (figures marked SENSITIVE, compensation, confidential employer internals): speak in relative terms first and politely hold back specifics unless explicitly pressed.
-- Each new message starts with a [SESSION CONTINUITY] tag; never read it aloud. If SAME DAY: earlier topics happened earlier in today's interview, so do not repeat basic background ("like I mentioned earlier..." is fine). If NEW DAY: this is a separate day or later round, so do not assume this interviewer heard earlier rounds, but stay factually consistent with memory. If the message itself says it is a new day or the same day, follow that.
+- Each new message starts with a [SESSION CONTINUITY] tag giving the current day and round; never read it aloud. If SAME DAY: earlier turns of the current round happened earlier today with this same interviewer, so do not repeat basic background to them ("like I mentioned earlier..." is fine). If NEW DAY: this is a separate day or later round, so do not assume this interviewer heard earlier rounds, but stay factually consistent with memory. If the message itself says it is a new day or the same day, follow that.
+- Who has heard what (this takes priority over SAME DAY): only the current round of the current interview was with the person asking now. Facts in memory tagged with an earlier day or round than the tag on the new message, earlier messages marked [EARLIER ROUND], and everything under SAVED EARLIER INTERVIEWS were said to other interviewers. Keep every one of those facts exactly consistent, but never refer back to those conversations, never skip or shorten an answer because it was given there, and when asked for a story (an incident, a mistake, a project, the introduction) give the candidate's main one in full even if it was already told there. The only exception is when the interviewer says they were in that earlier conversation, or a saved interview's label says it was the same interviewer.
 
 PREPARED ANSWERS (these set the exact voice and length; if one of these questions is asked, give essentially this answer; the behavioral and resume ones are the candidate's real stories):
 
@@ -1222,7 +1224,7 @@ ${bankAsExamples()}`;
       const earlier = activeEarlier();
       if (!earlier.length) return '';
       return 'SAVED EARLIER INTERVIEWS (PERMANENT MEMORY — STAY 100% CONSISTENT WITH EVERY FACT BELOW):\n' +
-        'They are listed in the order they happened, oldest first. One with the same date as the current interview was earlier the same day; other dates were earlier days. The [D·R] tags inside a ledger are that interview\'s own day and round counters.\n\n' +
+        'They are listed in the order they happened, oldest first. One with the same date as the current interview was earlier the same day; other dates were earlier days. The [D·R] tags inside a ledger are that interview\'s own day and round counters. Each was a separate conversation with a different interviewer unless its label says otherwise: the current interviewer has not heard any of it.\n\n' +
         earlier.map((e, i) => `=== EARLIER INTERVIEW ${i + 1} of ${earlier.length}: ${e.label} · ${e.date || 'date not recorded'} ===\n${e.memory.trim()}`).join('\n\n');
     }
     function currentBlockText() {
@@ -1254,6 +1256,13 @@ ${bankAsExamples()}`;
           content: m.role === 'assistant' ? collapseCodeBlocks(m.content) : m.content
         }));
       }
+      // turns kept from before a +R or New Day were with another interviewer: say so on the question
+      const nowTag = sessionTag();
+      const kept = even(state.contextMode === 'full' ? state.history : state.history.slice(-6));
+      prior.forEach((p, i) => {
+        const t = kept[i] && kept[i].tag;
+        if (p.role === 'user' && t && t !== nowTag) p.content = `[EARLIER ROUND ${t.replace(/[\[\]]/g, '')}: a different interviewer]\n${p.content}`;
+      });
       prior.push({ role: 'user', content: current });
       return prior;
     }
@@ -1614,7 +1623,7 @@ ${bankAsExamples()}`;
         const body = {
           model: MODEL_MAIN,
           stream: true,
-          max_tokens: isCoding ? 4096 : 1024,      // adaptive thinking is always on and counts toward this
+          max_tokens: isCoding ? 16000 : 1024,     // adaptive thinking is always on and counts toward this; a hard problem needs the room
           output_config: { effort },
           system: buildSystemBlocks(),
           messages: requestMessages
@@ -1860,7 +1869,13 @@ RULES:
 - Tag each new/updated fact with the session tag shown on its turn (e.g., [D1·R1] or [D2·R1]).
 - The candidate's answers are written as speech: strip all filler words, "..." pauses, pleasantries, and redundant phrasing, and convert spelled-out numbers and notation back to compact form ("fifty percent" -> 50%, "O of n" -> O(n), "P ninety-nine" -> p99).
 - Never drop previously committed numbers, dates, or sensitive-topic boundaries unless explicitly corrected in NEW TURNS.
-- Hard budget: keep the entire ledger concise and under 1,000 words (~1,200 tokens).`;
+- Size: the whole ledger must stay under 1,000 words; the message tells you its current word count. When adding the new turns would pass the limit, make room by condensing, in this order: (1) merge bullets that repeat one fact, including a CODING_AND_TECH_LOG line that restates a COMMITTED_FACTS line (keep one); (2) cut general textbook explanation down to the candidate's own choice or claim in a few words; (3) keep only the 6 most recent INTERVIEWER_THREAD lines and drop summaries of topics that are finished; (4) join related one-line facts into one line.
+- While condensing, never remove a number, a date, a name, a story that was told, a stated limit of the candidate's experience, or a sensitive boundary.`;
+
+    const LEDGER_WORD_LIMIT = 1000;      // what the compressor is asked to stay under
+    const LEDGER_WORD_HARD = 1300;       // a ledger that still comes back longer gets one condense-only pass
+    const wordCount = (s) => (String(s || '').match(/\S+/g) || []).length;
+    const ledgerSizeLine = (n) => `LEDGER SIZE NOW: ${n} words (limit ${LEDGER_WORD_LIMIT}).`;
 
     function turnsToText(msgs) {
       return msgs.map((m) => `${m.tag || ''} ${m.role === 'user' ? 'Interviewer' : 'Candidate'}: ${m.content}`).join('\n\n');
@@ -1911,15 +1926,31 @@ RULES:
     }
 
     async function liveCompress(existing, msgs) {
+      const had = wordCount(existing);
+      let text = await compressorCall(
+        `EXISTING PERMANENT MEMORY:\n${existing.trim() || '(empty)'}\n\nNEW TURNS:\n${turnsToText(msgs)}\n\n${ledgerSizeLine(had)}` +
+        (had > LEDGER_WORD_LIMIT * 0.8 ? ' It is at or near the limit: condense as the size rule says while you merge.' : ''));
+      const got = wordCount(text);
+      if (got > LEDGER_WORD_HARD) {
+        try {
+          const tight = await compressorCall(
+            `EXISTING PERMANENT MEMORY:\n${text}\n\nNEW TURNS:\n(none)\n\n${ledgerSizeLine(got)} ` +
+            `There are no new turns. Only condense this ledger to under ${LEDGER_WORD_LIMIT} words as the size rule says, keeping the 5 headers.`);
+          const now = wordCount(tight);
+          // take the shorter ledger only if it is a real ledger and not gutted
+          if (now < got && now >= LEDGER_WORD_LIMIT * 0.4 && LEDGER_HEADERS.some((h) => tight.includes(h))) text = tight;
+        } catch (_) {}                       // the merged ledger is complete, only long: keep it
+      }
+      return text;
+    }
+
+    async function compressorCall(content) {
       const body = {
         model: state.compModel,
-        max_tokens: 8000,                    // thinking counts toward this; a full ledger alone is about 1,500
+        max_tokens: 16000,                   // thinking counts toward this; a ledger at the limit is about 3,000
         output_config: { effort: 'low' },
         system: COMPRESSOR_PROMPT,
-        messages: [{
-          role: 'user',
-          content: `EXISTING PERMANENT MEMORY:\n${existing.trim() || '(empty)'}\n\nNEW TURNS:\n${turnsToText(msgs)}`
-        }]
+        messages: [{ role: 'user', content }]
       };
       let res;
       try {
@@ -2398,6 +2429,7 @@ RULES:
       setTopStatus('', `Day <strong>${state.dayNum}</strong> · New Day`);
     }
     function startNewRound() {
+      flushForBoundary();                  // file the finished round's turns under its own tag first
       state.roundNum += 1;
       save(); syncSessionUI();
       setTopStatus('', `Day ${state.dayNum} · Round <strong>${state.roundNum}</strong>`);
