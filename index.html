@@ -1,0 +1,2486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#080b12" />
+  <!-- Lock-down: this page may only talk to api.anthropic.com and may not load any outside script, style, image or frame.
+       Even if something unexpected ran on the page, it could not send the API key to another server by a network call. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.anthropic.com; img-src 'self' data:; manifest-src 'self'; form-action 'none'; base-uri 'none'" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>Interview HUD · Opus 5.5</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b12;
+      --surface: #111623;
+      --surface-2: #171e2f;
+      --border: #232d45;
+      --text: #e6edf7;
+      --muted: #8b99b5;
+      --accent: #38bdf8;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --err: #fb7185;
+      --code-bg: #0a0f1c;
+      --say: 17.5px;
+      --code: 12.5px;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+    body.ts-l { --say: 19.5px; --code: 13px; }
+    body.ts-xl { --say: 22px; --code: 13.5px; }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      overscroll-behavior: none;
+    }
+    button { font-family: inherit; touch-action: manipulation; }
+
+    .app {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    /* ---------- 1. Top bar ---------- */
+    .topbar {
+      min-height: calc(48px + env(safe-area-inset-top));
+      padding: env(safe-area-inset-top) max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left));
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(8, 11, 18, 0.96);
+      border-bottom: 1px solid var(--border);
+      z-index: 20;
+    }
+    .metric-wrap { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+    .dot.thinking { background: var(--warn); animation: pulse 1s infinite; }
+    .dot.streaming { background: var(--accent); animation: pulse 0.8s infinite; }
+    .dot.error { background: var(--err); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .metric-text {
+      font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    }
+    .metric-text strong { color: var(--text); font-weight: 600; }
+    .cache-pill {
+      font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+      padding: 3px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0;
+      border: 1px solid var(--border); color: var(--muted);
+    }
+    .cache-pill.hit { color: var(--ok); border-color: rgba(52, 211, 153, 0.5); background: rgba(52, 211, 153, 0.1); }
+    .cache-pill.write { color: var(--warn); border-color: rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.1); }
+    .top-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .btn-top {
+      min-height: 38px; padding: 0 10px; border-radius: 9px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      font-size: 12.5px; font-weight: 500; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;
+    }
+    .btn-top:active { background: var(--surface-2); transform: scale(0.97); }
+    .btn-top.icon { width: 38px; padding: 0; font-size: 15px; }
+    .btn-top.danger { border-color: rgba(251, 113, 133, 0.5); color: #fecdd3; }
+    .btn-top .badge {
+      font-family: var(--mono); font-size: 10px; font-weight: 700; color: #06101d;
+      background: var(--warn); border-radius: 999px; padding: 0 5px; line-height: 15px;
+    }
+    .wide-only { display: none; }
+
+    /* ---------- 2. Stream ---------- */
+    .stream {
+      flex: 1; min-height: 0; position: relative;
+      overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
+      padding: 12px max(12px, env(safe-area-inset-right)) 18px max(12px, env(safe-area-inset-left));
+      display: flex; flex-direction: column; gap: 18px;
+    }
+    .empty-hint { margin: auto 0; text-align: center; color: var(--muted); font-size: 13.5px; padding: 20px 12px; }
+    .empty-hint code {
+      font-family: var(--mono); font-size: 12px; color: var(--accent);
+      background: var(--surface); padding: 2px 6px; border-radius: 5px;
+    }
+    .empty-hint .btn-primary { margin-top: 14px; padding: 0 18px; }
+
+    .turn { display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
+    .turn:not(:last-child) { opacity: 0.58; }
+    .turn:not(:last-child):active { opacity: 1; }
+    .user-pill {
+      align-self: flex-end; max-width: 92%;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 14px 14px 4px 14px; padding: 7px 12px;
+      font-size: 13.5px; color: #d6e2f5; white-space: pre-wrap; word-break: break-word;
+    }
+    .user-pill .src {
+      font-family: var(--mono); font-size: 10px; color: var(--accent);
+      text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px;
+    }
+
+    /* Spoken script: large, calm, pause markers dimmed so cadence is visible */
+    .assistant-body { word-break: break-word; }
+    .say, .saychunk { font-size: var(--say); line-height: 1.62; color: var(--text); letter-spacing: 0.005em; }
+    .say p, .saychunk p { margin: 0 0 0.6em; }
+    .say p:last-child, .saychunk p:last-child { margin-bottom: 0; }
+    .pz { color: var(--accent); opacity: 0.55; letter-spacing: 0.08em; padding: 0 0.12em; }
+    .cue {
+      font-size: 12.5px; font-style: italic; color: var(--warn);
+      border-left: 2px solid var(--warn); padding-left: 8px; margin: 2px 0 0.6em;
+    }
+    .assistant-body ul, .assistant-body ol { margin: 4px 0 10px 20px; }
+    .assistant-body strong { color: #fff; font-weight: 600; }
+    .assistant-body h4 {
+      font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); margin: 10px 0 4px;
+    }
+    .assistant-body code.inline {
+      font-family: var(--mono); font-size: 0.82em; background: var(--surface-2); color: #7dd3fc;
+      padding: 1px 5px; border-radius: 4px;
+    }
+
+    /* Phone: approach → code → wrap-up in reading order. Wide: spoken left, code right. */
+    .split { display: flex; flex-direction: column; gap: 10px; }
+    .col-say, .col-code { display: contents; }
+
+    .thinking-line { font-family: var(--mono); font-size: 12px; color: var(--warn); }
+    .note-box, .err-box { border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+    .note-box { border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
+    .err-box { border: 1px solid rgba(251, 113, 133, 0.45); background: rgba(251, 113, 133, 0.1); color: #fecdd3; }
+    .err-box code { font-family: var(--mono); font-size: 12px; display: block; margin-top: 4px; color: #fda4af; }
+
+    /* ---------- Code card ---------- */
+    .code-card { border-radius: 10px; border: 1px solid var(--border); background: var(--code-bg); overflow: hidden; min-width: 0; }
+    .code-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 4px 6px 4px 10px; background: var(--surface); border-bottom: 1px solid var(--border);
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .code-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .code-meta .upd { color: var(--ok); font-weight: 600; }
+    .code-btns { display: flex; gap: 5px; flex-shrink: 0; }
+    .code-btn {
+      min-height: 36px; min-width: 52px; padding: 0 9px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+      font-size: 11.5px; font-weight: 500; cursor: pointer;
+    }
+    .code-btn:active { transform: scale(0.96); }
+    .code-btn.on { border-color: var(--accent); color: var(--accent); }
+    .code-btn.copied { border-color: var(--ok); color: var(--ok); }
+    .code-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 6px 0; }
+    .code-table { border-collapse: separate; border-spacing: 0; width: 100%; font-family: var(--mono); font-size: var(--code); line-height: 1.5; }
+    .gutter {
+      position: sticky; left: 0; z-index: 1;
+      background: var(--code-bg); color: #506180; text-align: right;
+      padding: 0 8px 0 6px; border-right: 1px solid #1b2438;
+      user-select: none; -webkit-user-select: none; width: 1%; white-space: nowrap; vertical-align: top;
+    }
+    .gutter .mk { display: inline-block; width: 0.9em; text-align: center; font-weight: 700; margin-right: 2px; }
+    .cline { padding: 0 12px 0 10px; white-space: pre; color: #e2e8f0; vertical-align: top; }
+    .code-card.wrap .cline { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .tk-c { color: #5eead4; font-style: italic; }
+    .tk-k { color: #c084fc; font-weight: 500; }
+    .tk-s { color: #fcd34d; }
+    .tk-n { color: #fb923c; }
+
+    /* Diff rows */
+    tr.add .cline, tr.mod .cline { background: rgba(52, 211, 153, 0.14); }
+    tr.add .gutter, tr.mod .gutter { background: #0d2a25; color: var(--ok); box-shadow: inset 3px 0 0 #34d399; }
+    tr.del .cline { background: rgba(251, 113, 133, 0.10); color: #9a7d88; text-decoration: line-through; text-decoration-color: rgba(251, 113, 133, 0.5); }
+    tr.del .gutter { background: #2a121a; color: var(--err); box-shadow: inset 3px 0 0 rgba(251, 113, 133, 0.6); }
+    tr.del .tk-c, tr.del .tk-k, tr.del .tk-s, tr.del .tk-n { color: inherit; }
+    tr.fold-div { display: none; cursor: pointer; }
+    tr.fold-div .cline { color: var(--muted); font-family: var(--sans); font-size: 12px; padding-top: 7px; padding-bottom: 7px; background: var(--surface); }
+    tr.fold-div .gutter { background: var(--surface); padding-top: 7px; }
+    .code-card.changes tr.fold { display: none; }
+    .code-card.changes tr.fold-div { display: table-row; }
+
+    /* ---------- 3. Composer ---------- */
+    .composer {
+      border-top: 1px solid var(--border); background: rgba(8, 11, 18, 0.97);
+      padding: 7px max(10px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+      display: flex; flex-direction: column; gap: 7px; z-index: 20;
+    }
+    .ctl-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .pills { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 2px; gap: 2px; flex-shrink: 0; }
+    .pill {
+      border: none; background: transparent; color: var(--muted);
+      font-size: 12px; font-weight: 500; min-height: 36px; padding: 0 9px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+    }
+    .pill.active { background: rgba(56, 189, 248, 0.16); color: var(--accent); font-weight: 600; }
+    .pill.day.active { background: rgba(52, 211, 153, 0.16); color: var(--ok); }
+    .pill.day.newday.active { background: rgba(251, 191, 36, 0.16); color: var(--warn); }
+    .round-btn {
+      min-height: 40px; padding: 0 9px; border-radius: 10px; flex-shrink: 0;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      font-family: var(--mono); font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .round-btn:active { background: var(--surface-2); }
+    .round-btn span { color: var(--accent); }
+    .spacer { flex: 1; min-width: 0; }
+    .ctx-badge { font-family: var(--mono); font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; display: none; }
+    .input-row { display: flex; align-items: flex-end; gap: 8px; min-width: 0; flex: 1; }
+    .prompt-input {
+      flex: 1; min-width: 0; min-height: 44px; max-height: 112px; resize: none;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 10px 12px; color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.35; outline: none;
+    }
+    .prompt-input:focus { border-color: var(--accent); }
+    .prompt-input::placeholder { color: #5b6985; }
+    .send-btn {
+      height: 44px; min-width: 66px; padding: 0 14px; border: none; border-radius: 12px;
+      background: var(--accent); color: #06101d; font-size: 14px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+    }
+    .send-btn:active { transform: scale(0.97); }
+    .send-btn.stop { background: var(--err); color: #fff; }
+
+    /* ---------- Modals ---------- */
+    .modal-backdrop {
+      position: fixed; left: 0; right: 0; top: var(--vvt, 0px); height: var(--vvh, 100dvh);
+      background: rgba(3, 6, 12, 0.78);
+      display: none; align-items: flex-end; justify-content: center; z-index: 50;
+      padding: calc(10px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: 100%; max-width: 600px; max-height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      padding: 14px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .modal > * { flex-shrink: 0; }
+    .modal.big { max-width: 860px; }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: sticky; top: -14px; background: var(--surface); padding: 6px 0; margin: -6px 0; z-index: 2; }
+    .modal-title { font-size: 15px; font-weight: 700; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field > label, .field-label { font-size: 12px; font-weight: 600; color: #cbd5e1; }
+    .hint { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+    .hint.warn { color: var(--warn); }
+    .textarea, .text-input {
+      width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px; color: var(--text); font-family: var(--mono); font-size: 16px; outline: none;
+    }
+    .textarea { min-height: 240px; resize: vertical; line-height: 1.4; }
+    .textarea.sm { font-size: 16px; min-height: 200px; }
+    .textarea:focus, .text-input:focus { border-color: var(--accent); }
+    .text-input.sans { font-family: var(--sans); }
+    .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .seg.three { grid-template-columns: 1fr 1fr 1fr; }
+    .seg-btn {
+      min-height: 42px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: center;
+    }
+    .seg-btn.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.14); color: var(--accent); }
+    .radio-stack { display: flex; flex-direction: column; gap: 6px; }
+    .radio-opt {
+      display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg); cursor: pointer;
+    }
+    .radio-opt input { margin-top: 3px; accent-color: var(--accent); }
+    .radio-opt strong { display: block; font-size: 12.5px; color: var(--text); }
+    .radio-opt span { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+    .check-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); cursor: pointer; min-height: 36px; }
+    .check-row input { accent-color: var(--accent); width: 18px; height: 18px; flex-shrink: 0; }
+    .btn-primary {
+      min-height: 44px; border: none; border-radius: 10px; background: var(--accent); color: #06101d;
+      font-size: 14px; font-weight: 700; cursor: pointer; padding: 0 14px;
+    }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .btn-row .btn-top { min-height: 42px; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+    .stat b { display: block; font-family: var(--mono); font-size: 15px; color: var(--text); font-weight: 600; }
+    .stat span { font-size: 11px; color: var(--muted); }
+
+    /* Saved interviews */
+    .lib-top { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .lib-label { flex: 1 1 110px; min-width: 0; min-height: 42px; padding: 8px 10px; }
+    .lib-date { flex: 0 0 146px; min-height: 42px; padding: 8px 6px; }
+    .lib-on { display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 4px; font-family: var(--mono); font-size: 12px; color: var(--accent); cursor: pointer; flex-shrink: 0; }
+    .lib-on input { width: 20px; height: 20px; accent-color: var(--ok); }
+    .lib-item { border: 1px solid var(--border); border-radius: 12px; background: var(--bg); padding: 8px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+    .lib-item.off { opacity: 0.55; }
+    .lib-item .text-input { background: var(--surface); }
+    .lib-item details { font-size: 12px; color: var(--muted); }
+    .lib-item summary { min-height: 34px; display: flex; align-items: center; cursor: pointer; padding: 0 4px; }
+    .lib-item details .textarea { min-height: 170px; margin-top: 4px; background: var(--surface); }
+    .lib-btns { display: grid; grid-template-columns: 52px 52px 1fr 1fr; gap: 6px; }
+    .lib-btns .btn-top { min-height: 40px; }
+    .lib-btns .btn-top:disabled { opacity: 0.3; }
+    .lib-empty { font-size: 12.5px; color: var(--muted); padding: 10px; border: 1px dashed var(--border); border-radius: 12px; }
+
+    /* Speed test */
+    .speed-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .speed-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11.5px; }
+    .speed-table th, .speed-table td { text-align: right; padding: 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .speed-table th { color: var(--muted); font-weight: 600; }
+    .speed-table th:first-child, .speed-table td:first-child {
+      text-align: left; white-space: normal; font-family: var(--sans); font-size: 12.5px; min-width: 128px;
+    }
+    .speed-table tr.ph td { color: var(--accent); font-family: var(--sans); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; text-align: left; }
+    .speed-table td.hit { color: var(--ok); }
+    .speed-table td.write { color: var(--warn); }
+    .speed-table td.bad { color: var(--err); white-space: normal; text-align: left; }
+    #speedSummary { color: var(--text); line-height: 1.55; }
+    #speedSummary b { font-family: var(--mono); font-weight: 600; }
+
+    /* Bank */
+    .bank-cat { font-size: 11.5px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin: 6px 0 2px; }
+    .bank-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+    .bank-q {
+      min-height: 44px; text-align: left; padding: 8px 12px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13.5px; line-height: 1.35; cursor: pointer;
+    }
+    .bank-q:active { background: var(--surface-2); border-color: var(--accent); }
+    .bank-q small { display: block; font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    /* ---------- Wide: Oppo Find N5 unfolded, tablets, phone landscape ---------- */
+    @media (min-width: 640px) {
+      :root { --say: 19px; }
+      body.ts-l { --say: 21px; }
+      body.ts-xl { --say: 23.5px; }
+      .wide-only { display: inline-flex; }
+      .stream { padding-top: 14px; gap: 22px; }
+      .user-pill { align-self: flex-start; border-radius: 4px 14px 14px 14px; max-width: 100%; }
+      .say { max-width: 46em; }
+      .split {
+        display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+        column-gap: 16px; align-items: start;
+      }
+      .col-say, .col-code { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+      .col-say { position: sticky; top: 0; }
+      .composer { flex-direction: row; align-items: flex-end; gap: 8px; }
+      .ctl-row { flex-shrink: 0; height: 44px; }
+      .spacer { display: none; }
+      .modal-backdrop { align-items: center; }
+      .bank-grid { grid-template-columns: 1fr 1fr; }
+      .stat-grid { grid-template-columns: repeat(4, 1fr); }
+      .btn-row { grid-template-columns: repeat(4, 1fr); }
+    }
+    @media (min-width: 900px) {
+      .ctx-badge { display: block; }
+    }
+    /* Short viewports (keyboard up on a foldable, phone landscape): tighten chrome */
+    @media (max-height: 460px) {
+      .topbar { min-height: calc(40px + env(safe-area-inset-top)); }
+      .btn-top { min-height: 34px; }
+      .stream { padding-top: 8px; padding-bottom: 8px; }
+    }
+    /* iPhone portrait: keep the top bar inside 430–440px */
+    @media (max-width: 480px) {
+      .btn-top { padding: 0 9px; }
+      .pill { padding: 0 8px; }
+    }
+    @media (max-width: 374px) {
+      .cache-pill { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="metric-wrap">
+        <span id="statusDot" class="dot"></span>
+        <span id="metricText" class="metric-text">Ready</span>
+        <span id="cachePill" class="cache-pill">cache —</span>
+      </div>
+      <div class="top-actions">
+        <button class="btn-top" onclick="openModal('bankModal')">Bank</button>
+        <button class="btn-top" onclick="openModal('memoryModal')">Mem<span id="memBadge" class="badge" style="display:none"></span></button>
+        <button class="btn-top wide-only" onclick="openModal('resumeModal')">Resume</button>
+        <button class="btn-top" onclick="clearChat()">Clear</button>
+        <button class="btn-top icon" onclick="openModal('settingsModal')" aria-label="Settings">⚙</button>
+      </div>
+    </header>
+
+    <main id="stream" class="stream"></main>
+
+    <footer class="composer">
+      <div class="ctl-row">
+        <div class="pills" role="group" aria-label="Effort mode">
+          <button id="pill-auto" class="pill active" onclick="setEffortMode('auto')">Auto</button>
+          <button id="pill-low" class="pill" onclick="setEffortMode('low')">Quick</button>
+          <button id="pill-medium" class="pill" onclick="setEffortMode('medium')">Code</button>
+        </div>
+        <span class="spacer"></span>
+        <div class="pills" role="group" aria-label="Session continuity">
+          <button id="day-same" class="pill day active" onclick="setSameDay()">Same Day</button>
+          <button id="day-new" class="pill day newday" onclick="startNewDay()">New Day</button>
+        </div>
+        <button id="roundBtn" class="round-btn" onclick="startNewRound()" aria-label="Start a new round">D1·R1 <span>+R</span></button>
+        <span id="ctxBadge" class="ctx-badge"></span>
+      </div>
+      <div class="input-row">
+        <textarea id="promptInput" class="prompt-input" rows="1" placeholder="Type the question…" enterkeyhint="send"
+          autocapitalize="sentences" autocomplete="off" oninput="autoGrow(this)" onkeydown="onInputKey(event)"></textarea>
+        <button id="sendBtn" class="send-btn" onclick="onSendOrStop()">Send</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Question bank -->
+  <div id="bankModal" class="modal-backdrop" onclick="backdropClose(event, 'bankModal')">
+    <div class="modal big">
+      <div class="modal-head">
+        <span class="modal-title">Question bank</span>
+        <button class="btn-top" onclick="closeModal('bankModal')">Close</button>
+      </div>
+      <input id="bankSearch" class="text-input sans" type="search" placeholder="Filter questions…" oninput="renderBank()" autocomplete="off" />
+      <div id="bankList"></div>
+      <span class="hint">Tap a question to show its prepared answer instantly (no API call). The same answers are sent to the model as voice examples in Live mode.</span>
+    </div>
+  </div>
+
+  <!-- Memory -->
+  <div id="memoryModal" class="modal-backdrop" onclick="backdropClose(event, 'memoryModal')">
+    <div class="modal big">
+      <div class="modal-head">
+        <span class="modal-title">Permanent memory</span>
+        <button class="btn-top" onclick="closeModal('memoryModal')">Close</button>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><b id="stMem">0</b><span>memory sent · est. tokens</span></div>
+        <div class="stat"><b id="stPend">0</b><span>uncompressed turns</span></div>
+        <div class="stat"><b id="stHit">—</b><span>cache hit rate (live)</span></div>
+        <div class="stat"><b id="stTime">0:00:00</b><span>session elapsed</span></div>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Current interview</span>
+        <div class="lib-top">
+          <input id="curLabel" class="text-input sans lib-label" placeholder="Label, e.g. Jump phone screen" autocomplete="off" onchange="setCurMeta()" />
+          <input id="curDate" class="text-input sans lib-date" type="date" onchange="setCurMeta()" />
+        </div>
+        <textarea id="memEditor" class="textarea sm" spellcheck="false" placeholder="Empty. Facts land here after the first compression."></textarea>
+        <span id="memStatus" class="hint">Save interview files this ledger under its label and date, then starts a new empty one.</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="saveInterview()">Save interview</button>
+        <button class="btn-top" onclick="compressMemory('manual')">Compress now</button>
+        <button class="btn-top" onclick="saveMemoryEdit()">Save edit</button>
+        <button class="btn-top" id="undoBtn" onclick="undoCompression()">Undo last</button>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Saved interviews · oldest first · ticked ones are sent as memory</span>
+        <div id="libList"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-top" onclick="$('importFile').click()">Upload</button>
+        <button class="btn-top" onclick="exportAll()">Export all</button>
+        <button class="btn-top" onclick="sortLibraryByDate()">Sort by date</button>
+        <button class="btn-top" onclick="resetStats()">Reset stats</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn-top danger" onclick="wipeMemory()">Clear current interview</button>
+        <button class="btn-top" onclick="closeModal('memoryModal'); openModal('resumeModal')">Edit resume</button>
+      </div>
+      <input id="importFile" type="file" accept="application/json,.json,.txt,.md,text/plain" multiple style="display:none" onchange="uploadMemory(event)" />
+      <span class="hint">Order is the timeline the model sees: use ↑ ↓ to reorder, including several interviews on one date. Untick an interview to leave it out without deleting it. <strong>Clear</strong> in the top bar only resets the screen and the short rolling buffer.</span>
+    </div>
+  </div>
+
+  <!-- Resume -->
+  <div id="resumeModal" class="modal-backdrop" onclick="backdropClose(event, 'resumeModal')">
+    <div class="modal big">
+      <div class="modal-head">
+        <span class="modal-title">Resume background (cached system block 1)</span>
+        <button class="btn-top" onclick="closeModal('resumeModal')">Close</button>
+      </div>
+      <div class="field">
+        <textarea id="resumeEditor" class="textarea" spellcheck="false"></textarea>
+        <span id="resumeHint" class="hint"></span>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="saveAndLockResume()">Save &amp; lock</button>
+        <button class="btn-top" onclick="$('resumeFile').click()">Load .md / .txt</button>
+        <button class="btn-top" onclick="resetResume()">Jump default</button>
+        <button class="btn-top" onclick="closeModal('resumeModal')">Cancel</button>
+      </div>
+      <input id="resumeFile" type="file" accept=".md,.txt,text/plain,text/markdown" style="display:none" onchange="loadResumeFile(event)" />
+      <span class="hint warn">Changing the resume rewrites the cache once. Loading the whole Jump prep doc (~50k tokens) works, but the first request after each change is slower and costs more.</span>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="settingsModal" class="modal-backdrop" onclick="backdropClose(event, 'settingsModal')">
+    <div class="modal">
+      <div class="modal-head">
+        <span class="modal-title">Settings</span>
+        <button class="btn-top" onclick="closeModal('settingsModal')">Done</button>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Mode</span>
+        <div class="seg">
+          <button id="mode-sim" class="seg-btn" onclick="setRunMode('sim')">Offline bank (sim)</button>
+          <button id="mode-live" class="seg-btn" onclick="setRunMode('live')">Live Claude API</button>
+        </div>
+      </div>
+
+      <div id="keyField" class="field" style="display:none;">
+        <label for="apiKeyInput">Anthropic API key</label>
+        <input id="apiKeyInput" type="password" class="text-input" placeholder="sk-ant-..." autocomplete="off" oninput="onKeyInput()" />
+        <input id="workspaceInput" type="text" class="text-input" placeholder="Workspace ID (wrkspc_…) — only for organisation-scoped keys" autocomplete="off" autocapitalize="off" spellcheck="false" oninput="state.workspaceId = this.value.trim(); save();" />
+        <label class="check-row">
+          <input id="sessionStoreCheck" type="checkbox" onchange="onSessionStoreToggle()" />
+          <span>Keep in sessionStorage for this tab (sent only to api.anthropic.com)</span>
+        </label>
+        <label class="check-row">
+          <input id="deviceStoreCheck" type="checkbox" onchange="onDeviceStoreToggle()" />
+          <span>Remember on this device (paste once; stays after closing the tab)</span>
+        </label>
+        <span class="hint warn">“Remember” stores the key unencrypted in this browser. Use a key with a spend limit, and untick to erase it.</span>
+        <button class="btn-top" style="min-height:42px" onclick="closeModal('settingsModal'); openModal('speedModal')">Run live speed test</button>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Spoken text size</span>
+        <div class="seg three">
+          <button id="ts-m" class="seg-btn" onclick="setTextSize('m')">Standard</button>
+          <button id="ts-l" class="seg-btn" onclick="setTextSize('l')">Large</button>
+          <button id="ts-xl" class="seg-btn" onclick="setTextSize('xl')">Extra large</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Claude Opus 5.5 speed tier</span>
+        <div class="seg">
+          <button id="spd-fast" class="seg-btn" onclick="setSpeedMode(true)">Fast</button>
+          <button id="spd-std" class="seg-btn" onclick="setSpeedMode(false)">Standard</button>
+        </div>
+        <span class="hint warn">Fast and Standard keep separate prompt caches. Pick one before a session and leave it.</span>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Cache TTL</span>
+        <div class="seg">
+          <button id="ttl-1h" class="seg-btn" onclick="setCacheTtl('1h')">1 hour (breaks OK)</button>
+          <button id="ttl-5m" class="seg-btn" onclick="setCacheTtl('5m')">5 min (rapid-fire)</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Memory compression</span>
+        <div class="seg">
+          <button id="cmp-haiku" class="seg-btn" onclick="setCompModel('claude-haiku-5-5')">Haiku 5.5</button>
+          <button id="cmp-opus" class="seg-btn" onclick="setCompModel('claude-opus-5-5')">Opus 5.5 (low)</button>
+        </div>
+        <label class="check-row">
+          <input id="autoCompressCheck" type="checkbox" onchange="onAutoCompressToggle()" />
+          <span>Auto-compress after 4 Q&amp;A turns and on New Day</span>
+        </label>
+        <label class="check-row">
+          <input id="fallbackCheck" type="checkbox" onchange="onFallbackToggle()" />
+          <span>Retry on another model if a safety classifier declines (server-side fallback, beta)</span>
+        </label>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Context window</span>
+        <div class="radio-stack">
+          <label class="radio-opt">
+            <input type="radio" name="ctxMode" value="smart" onchange="setContextMode('smart')" />
+            <div><strong>Smart window (default)</strong><span>Resume + memory + last 3 turns. Old code is dropped; the current code is re-attached only on a coding follow-up.</span></div>
+          </label>
+          <label class="radio-opt">
+            <input type="radio" name="ctxMode" value="resume_only" onchange="setContextMode('resume_only')" />
+            <div><strong>Resume + memory only (fastest)</strong><span>No raw turns sent. Flat latency; continuity comes from compressed memory.</span></div>
+          </label>
+          <label class="radio-opt">
+            <input type="radio" name="ctxMode" value="full" onchange="setContextMode('full')" />
+            <div><strong>Full rolling buffer</strong><span>Sends every buffered turn verbatim, code included (to benchmark latency drift).</span></div>
+          </label>
+        </div>
+      </div>
+
+      <button class="btn-top" style="min-height:42px" onclick="closeModal('settingsModal'); openModal('resumeModal')">Edit resume background</button>
+    </div>
+  </div>
+
+  <!-- Live speed test -->
+  <div id="speedModal" class="modal-backdrop" onclick="backdropClose(event, 'speedModal')">
+    <div class="modal big">
+      <div class="modal-head">
+        <span class="modal-title">Live speed test</span>
+        <button class="btn-top" onclick="closeModal('speedModal')">Close</button>
+      </div>
+      <span class="hint">Sends 12 real questions and one compression call through this app's own request code, using your current speed tier and cache TTL. It covers a fresh session, a simulated hour-6 state (memory ledger at its cap plus a full rolling window) and the worst case (30 raw turns sent). Takes a minute or two and costs roughly US$0.50–1 in Fast mode. Your chat, memory and counters are left as they are.</span>
+      <div class="btn-row">
+        <button id="speedRunBtn" class="btn-primary" onclick="runSpeedTest()">Run test</button>
+        <button id="speedCopyBtn" class="btn-top" onclick="copySpeedResults()">Copy results</button>
+      </div>
+      <span id="speedStatus" class="hint"></span>
+      <div class="speed-wrap"><table id="speedTable" class="speed-table"></table></div>
+      <div id="speedSummary" class="note-box" style="display:none"></div>
+    </div>
+  </div>
+
+<!-- ================= Default resume background: "Jump clean" (Part 1 verbatim + prep-doc facts) ================= -->
+<script type="text/plain" id="resumeSrc">
+ELLYSSA TAN · Singapore
+(Part 1 below is the resume Jump receives. It is ground truth: every answer must agree with it.)
+
+SUMMARY
+Software engineer with ~5 years building trading and data platforms, including 3+ years in Python and C++ on automated trading systems at Millennium. Focused on performance and reliability: tuning trade-execution throughput with Linux profiling tools, building Solace/Kafka market-data simulation infrastructure, and owning the data-correctness layer behind live systematic strategies. Partners closely with quantitative researchers, backend engineers, and the trading desk to turn business priorities into dependable platform improvements.
+
+TECHNICAL SKILLS
+- Programming: Python (NumPy, Pandas, scikit-learn), C++, SQL, Java, R, Bash; OOP design patterns
+- Computer Systems & Performance: Linux, CPU profiling (perf, flame graphs), latency and throughput tuning, multi-threaded & asynchronous programming, network programming
+- Distributed Systems: Solace (low-latency path), Kafka (throughput / deterministic replay), distributed computing, Docker
+- Data: KDB+/q, PostgreSQL, Redis, time-series analysis, statistical modelling, large-scale data processing
+- Engineering Practices: system design, Git, Jenkins, Airflow, CI/CD, deterministic & regression testing, AI-assisted workflows (review + benchmark gates)
+
+EXPERIENCE
+Millennium Management · Software Developer Engineer, Automated Trading · Singapore · May 2023 - Present
+- Led latency tuning of the trade-execution pipeline, profiling hot paths with perf and flame graphs and working through fixes with quantitative researchers and backend engineers to lift sustained throughput by 50%.
+- Built a Solace/Kafka market-data simulation rig that sustains 50k+ messages/sec, letting the team validate delivery and failover behaviour under production-scale bursts before changes go live.
+- Optimised the Python/C++ framework that validates the firm's automated trading systems end-to-end, cutting regression cycles by 60% and shortening the path from validated change to production.
+- Own the KDB+/SQL data-validation layer behind high-frequency trade capture, position reconciliation, and multi-asset regulatory checks, the post-trade correctness backbone the trading desk relies on for live strategies.
+- Codified the team's testing and validation conventions as Claude Skills, so Claude Code generates harnesses and checks that are review-ready on the first pass, with AI-assisted changes kept behind review and benchmark gates.
+
+Visa · Software Engineer, Data Platforms & Analytics · Singapore · Nov 2021 - May 2023
+- Architected a distributed, multi-source financial data-ingestion pipeline feeding near-real-time statistical reporting and executive dashboards.
+- Built multi-tier analytics services: secure, high-throughput REST APIs (JWT) on top of Redis-cached SQL for large-scale analytical workloads.
+- Cut manual testing by 70% with automated UI and unit tests (Selenium, JUnit, Mockito).
+
+SELECTED PROJECTS
+Sports-Odds Arbitrage Finder · Modern C++ / Personal Project
+- Built a C++ tool that pulls live bookmaker odds and flags arbitrage from implied-probability gaps, sizing stakes automatically; a personal exercise in real-time data and probability (detection only).
+- Polls several books concurrently (libcurl, nlohmann/json) on a tight scan loop, since opportunities are fleeting and disappear as books reprice.
+AIMie: AI-Powered Manufacturing Chatbot · Agentic AI / Full-Stack · Award: Best Project, NUS Master of Technology in Software Engineering
+- Architected the multi-agent orchestration system and built its core agentic-AI modules (Python, FastAPI, LangChain) on a microservices architecture with real-time WebSocket communication, deployed to AWS ECS via CI/CD.
+
+EDUCATION & RECOGNITION
+- National University of Singapore, Master of Technology in Software Engineering · 2024 - 2025 (part-time, alongside Millennium) · Distributed Systems, System Architecture, Data-Intensive Applications, Machine Learning
+- National University of Singapore, Graduate Diploma in Software Engineering · 2022 - 2023 (alongside Visa) · Valedictorian (top of cohort)
+
+BACKGROUND NOTES (from the Jump prep doc; they extend the resume and never contradict it)
+Positioning: quant developer on the engineering side of a mid-frequency systematic desk. "The researchers decide what a strategy should do; I make the code that trades it fast, provably unchanged, and checked after the fact." Time in role: say "three-plus years" at Millennium and "about five years" in total.
+Do claim: latency work on the C++ order path with the backend team; reliability of the live market-data consumers and the replay rig; restructuring the deterministic simulation that runs production strategy code against a matching-engine exchange simulator; intraday kdb+/q checks on fills and positions.
+Do not claim: alpha research or signals; the exchange feed handlers (a separate market-data team owns them); an HFT path (it is kernel TCP, budget in the hundreds of microseconds); writing the matching engine; the official reconciliation or compliance rules; kernel bypass or hardware timestamping in production.
+
+Stories:
+- S1 Order-path latency tuning. At the open, order events arrive in clumps (one rebalance emits dozens of child orders at once), so tail latency broke the budget. Defined the metric first (highest rate held ten minutes inside the p99 budget), built an open-loop replay harness because closed-loop load hides queueing, profiled with perf, flame graphs and off-CPU views. Four costs removed: a contended mutex (replaced by a bounded SPSC ring with acquire/release atomics, head and tail on separate cache lines), hot-path heap allocations (object pools), synchronous logging (async binary logging), string-built FIX messages (templates). Proof: identical FIX output on deterministic replay, ThreadSanitizer, stress runs, shipped behind a config switch. Result: sustained throughput +50% within the same p99 budget; p99 at the open fell about tenfold. Own work: harness, profiling, queue, pooling; logging and FIX changes written with the component owners; host tuning by infrastructure.
+- S1 production mistake. The async logging change's first live open filled the log queue in under a minute: overflow policy was "wait for space" and production logs went to slower storage than the replay host, so the hot thread waited on the logger and tail latency spiked briefly until the config switch was flipped back. No order was wrong; some went out late. Now logging never blocks the hot path (drop and count, counter on the dashboard) and the harness has a slow-disk mode. Lesson: replay proved the code, not the environment.
+- S2 Solace/Kafka replay rig (favourite project). Before it, consumer changes were tested on low-rate synthetic feeds, so burst and failover bugs showed up in production. A C++ publisher on Solace's C API replays recorded sessions at real, scaled or maximum speed with real open bursts; Kafka is the durable path for capture and deterministic replay. Faults injected on purpose: stop the active broker, add latency and loss, slow a consumer. Sequence numbers decide order, timestamps only set the pace; outputs of two runs are hashed and compared. 50k+ msgs/s sustained, several times the feed the consumers actually see; caught 5 delivery and failover bugs in its first 6 months; runs as a Jenkins gate.
+- S2 hardest bug. A market-data consumer lost data silently under burst: all processing ran inside the Solace receive callback, so the broker discarded the oldest Direct messages and the consumer never checked the discard indication. Fix: the callback only hands off to a preallocated ring and a worker does the processing; a discard indication or sequence gap marks instruments stale, alerts, and backfills from Kafka. Lesson: no error is not evidence of no loss.
+- S3 End-to-end validation framework. Consolidated ad-hoc scripts into one shared Python package; simulated clock, intraday state snapshots, pytest-xdist parallelism. Full regression about 10 h to about 4 h (60%); pull requests get feedback in under an hour. What went wrong: hidden shared state (ports, topics, temp dirs) caused a few weeks of flaky failures when parallelism was switched on; fixed by making it deterministic first, isolating each worker, and quarantining flaky tests.
+- S4 kdb+/q post-trade checks. Intraday checks on fills and positions: trade capture against drop copies, as-of price checks against the prevailing quote, position reconciliation, compliance pre-checks, plus the break views traders and operations use. Breaks surface within about 5 minutes instead of next-day.
+- S5 Claude Code skills. Team testing conventions codified as project skills; first-pass approval of AI-assisted test PRs rose from about 30% to about 70% over 3 months; every change still passes code-owner review, CI and benchmark gates.
+- S6 Visa. Architected a multi-source streaming pipeline (Kafka, Python, Airflow, Java consumers, PostgreSQL) and built and owned its ingestion and validation services; dashboards went from next-day to 5-15 minutes. Spring Boot REST APIs with JWT over Redis-cached PostgreSQL; cache hits at p95 under 100 ms. Automated regression testing cut manual testing about 70%.
+- S7 Sports-odds arbitrage finder (personal, detection only, no bets placed). C++17, libcurl multi poller, integer odds, stake sizing after commission, staleness checks, Python replay layer.
+- S8 AIMie capstone. Five-person team; LangGraph supervisor routing to RAG, text-to-SQL and action agents; FastAPI, WebSockets, AWS ECS; an evaluation set every change had to pass. Best Project Prize.
+- S9 Home network-latency benchmark (personal). Two old desktops with Intel i210 NICs, hardware-timestamped UDP ping-pong; turning off interrupt coalescing mattered most. Next: DPDK and OpenOnload over AF_XDP.
+
+Motivation: not running from anything; the big pieces are delivered and owned by the team. The desk is mid-frequency, so the order path stops at standard kernel TCP; wants to go further down the stack (OS, network, hardware) at a firm where that engineering is the business. Why Jump: depth from the trading engine down to custom hardware; small teams of traders, engineers and researchers; a high standard of evidence in measurement.
+
+SENSITIVE FIGURES (possible oversharing about the current employer). Lead with relative terms ("about fifty percent", "roughly tenfold", "several times the peak"). Give a figure below only when the interviewer explicitly presses for it, and then only the one asked for.
+- [HIGH] S1: about 8k to 12k order events/s within a 250 µs p99 (open-loop, held 10 minutes); open p99 about 1.2 ms to about 110 µs; p50 about 30 µs to about 8 µs.
+- [MEDIUM] S2: the desk's peak is about 15k msgs/s. S1 ring: 4,096 slots. Production mistake: p99 about 2 ms for about 40 seconds.
+- [LOW] Clumps of about 40 child orders; about 20 allocations per order before pooling.
+- Compensation, counter-offers, notice and non-compete details: polite, relative, no numbers unless pressed.
+</script>
+
+<!-- ================= Question bank: prepared answers in the target voice =================
+     Format:  "## Category"  ·  "Q: question"  ·  "K: match keywords"  ·  answer body (spoken text, fenced code, "> cue" notes).
+     Categories starting with "*" are offline demos and are not sent to the model. -->
+<script type="text/plain" id="bankSrc">
+## 1. CS / OS fundamentals
+Q: What is virtual memory?
+K: virtual memory, page table, page fault, mmu, huge page
+So... virtual memory is basically every process... gets its own private address space... and the MMU maps those pages... to physical memory using page tables. Main point is... isolation, I think. And it's lazy... so you only get a physical page... when you first touch it... that's a page fault.
+
+For low latency, I guess... huge pages, and pre-fault everything... at startup so you don't fault... on the hot path.
+
+Q: Why does loop order matter for a 2D array?
+K: loop order, 2d array, row-major, row major, cache line, column order
+So C++ is row-major... so a i zero and a i one are... right next to each other. Inner loop over j... you're reading memory sequentially... so each cache line gets fully used.
+
+Flip it... and every access jumps a whole row... so it's like a cache miss... every time. Same big O, but could be... several times slower.
+
+## 2. C++ internals
+Q: What's the complexity of vector push_back?
+K: push_back, push back, vector, amortized, reallocat
+So... amortized O of one, worst case O of n. When it's full... it allocates a bigger buffer, like double... and moves everything over. Because it grows geometrically... it averages out... to constant per push.
+
+Oh and... it invalidates iterators when it reallocates... and it only moves if the move is noexcept... otherwise it copies. So on a hot path... just reserve up front.
+
+Q: Why do you need a virtual destructor?
+K: virtual destructor, base pointer, delete derived
+So if you delete a derived object... through a base pointer, and the destructor... isn't virtual... that's undefined behavior. Like, in practice the derived destructor... just doesn't run... so you leak. So rule of thumb... if it has virtual functions... make the destructor virtual.
+
+## 3. Python internals
+Q: What's the GIL?
+K: gil, global interpreter lock, free-threaded, free threaded
+So the GIL is a lock in CPython... only one thread runs bytecode... at a time. So CPU-bound... threads don't really help... you'd use multiprocessing or NumPy... which releases it. IO-bound is fine though.
+
+And... I think Python three fourteen has... the free-threaded build... officially supported now... but still optional.
+
+Q: What's a decorator?
+K: decorator, functools, wraps
+So it's just a function... that takes a function... and returns a wrapped one. The at sign is... just sugar. Like for timing or logging... something like...
+
+```python
+import functools, time
+
+def timed(fn):
+    @functools.wraps(fn)                # keeps fn's name + docstring
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        try:
+            return fn(*args, **kwargs)
+        finally:                        # still logs if fn throws
+            print(f"{fn.__name__} took {time.perf_counter() - start:.6f}s")
+    return wrapper
+```
+
+And wraps is... so it keeps the original name.
+
+## 4. OA-style algorithm coding
+Q: Minimum travel ticket cost (1-day $2, 7-day $7, 30-day $25)
+K: ticket, travel, 7-day, 30-day, pass cost, minimum cost
+Okay so... I think DP... dp of d is the min cost... to cover everything up to day d... Not a travel day... just carry dp of d minus one. Travel day... take the min of one-day... dp of d minus one, plus two... seven-day, dp of d minus seven, plus seven... or thirty-day, dp of d minus thirty, plus twenty-five... and clamp negatives to zero.
+
+```cpp
+#include <algorithm>
+#include <vector>
+
+int minCost(const std::vector<int>& days) {
+    if (days.empty()) return 0;
+    int last = days.back();
+    std::vector<int> dp(last + 1, 0);          // dp[d] = min cost to cover everything up to day d
+    std::vector<bool> travel(last + 1, false);
+    for (int d : days) travel[d] = true;
+
+    for (int d = 1; d <= last; ++d) {
+        if (!travel[d]) {                      // not travelling, nothing new to pay for
+            dp[d] = dp[d - 1];
+            continue;
+        }
+        dp[d] = std::min({
+            dp[d - 1] + 2,                     // 1-day pass for today
+            dp[std::max(0, d - 7)] + 7,        // 7-day pass covering days d-6 to d
+            dp[std::max(0, d - 30)] + 25       // 30-day pass covering days d-29 to d
+        });
+    }
+    return dp[last];
+}
+```
+
+So the example gives... seven for days one to five... plus two, two, two... thirteen. Yeah.
+
+Time's O of D... D is the last day... space O of D too.
+
+Q: Permutation Sequence (k-th permutation of 1 to n)
+K: permutation sequence, k-th permutation, kth permutation, permutation
+So brute force is n factorial... so no. Hmm... each first digit covers... n minus one factorial perms. So k divided by that... tells me the first digit. Then take the remainder... and repeat. Oh, make k zero-indexed first.
+
+```python
+from math import factorial
+
+def get_permutation(n: int, k: int) -> str:
+    digits = [str(i) for i in range(1, n + 1)]   # remaining digits, sorted
+    k -= 1                                       # make k 0-indexed
+    out = []
+    for i in range(n - 1, -1, -1):
+        block = factorial(i)                     # each leading digit "owns" i! perms
+        idx, k = divmod(k, block)                # which block, and offset inside it
+        out.append(digits.pop(idx))              # fix that digit, remove from pool
+    return "".join(out)
+```
+
+Check... n is three, k is three... gives two, one, three... yeah, two-one-three. Time's O of n squared... because of the pop... space O of n.
+
+## 5. From-scratch / low-latency implementation
+Q: Implement a lock-free SPSC queue
+K: spsc, lock-free, lock free, single producer, ring buffer
+So single producer, single consumer... so each index has only one writer... So no locks, no CAS... just atomics. Producer writes the slot... then publishes tail with release... Consumer reads tail with acquire... so it sees the data. And head and tail... on separate cache lines... so there's no false sharing.
+
+```cpp
+#include <atomic>
+#include <cstddef>
+
+template <typename T, std::size_t N>
+class SpscQueue {
+    static_assert((N & (N - 1)) == 0, "N has to be a power of 2");
+
+    alignas(64) std::atomic<std::size_t> head_{0};   // only the consumer writes this
+    alignas(64) std::atomic<std::size_t> tail_{0};   // only the producer writes this
+    alignas(64) T buf_[N];
+
+public:
+    // producer thread only
+    bool push(const T& item) {
+        std::size_t t = tail_.load(std::memory_order_relaxed);   // my own index, relaxed is fine
+        if (t - head_.load(std::memory_order_acquire) == N)      // full
+            return false;
+        buf_[t & (N - 1)] = item;                                // write the data first
+        tail_.store(t + 1, std::memory_order_release);           // then publish it
+        return true;
+    }
+
+    // consumer thread only
+    bool pop(T& out) {
+        std::size_t h = head_.load(std::memory_order_relaxed);
+        if (h == tail_.load(std::memory_order_acquire))          // empty
+            return false;
+        out = buf_[h & (N - 1)];                                 // read before freeing the slot
+        head_.store(h + 1, std::memory_order_release);           // hand the slot back
+        return true;
+    }
+};
+```
+
+Push and pop are O of one... wait-free. Space is... O of N.
+
+Q: Rolling VWAP with O of one updates (Python)
+K: vwap, rolling vwap, volume weighted
+So keep a running sum... of price times qty, and running volume... plus a deque of trades. New trade... add it in, then pop old ones... off the left and subtract them. VWAP is just... PV over volume.
+
+```python
+from collections import deque
+
+class RollingVWAP:
+    def __init__(self, window_ns: int):
+        self.window_ns = window_ns
+        self.trades = deque()        # (ts, px, qty), oldest on the left
+        self.pv = 0.0                # running sum of px * qty
+        self.vol = 0                 # running sum of qty
+
+    def on_trade(self, ts: int, px: float, qty: int) -> float | None:
+        self.trades.append((ts, px, qty))
+        self.pv += px * qty
+        self.vol += qty
+        cutoff = ts - self.window_ns
+        while self.trades and self.trades[0][0] <= cutoff:   # evict stuff outside the window
+            _, old_px, old_qty = self.trades.popleft()
+            self.pv -= old_px * old_qty
+            self.vol -= old_qty
+        return self.pv / self.vol if self.vol else None      # no div by zero
+```
+
+Each trade's pushed once... popped once, so O of one amortized. Space is... trades in the window. Oh and... floats can drift... so maybe integer ticks.
+
+## 6. System design
+Q: Design a matching engine in C++
+K: matching engine, order book, price-time, price time priority
+Okay so... I'll assume limit, market, cancel... price-time priority. So one book per symbol... price levels sorted, bids high to low... asks low to high. Each level's a FIFO queue... plus a hash map, order ID to order... so cancel is O of one.
+
+Matching... a buy comes in... while the best ask... is at or below its price... fill against the front order... at the resting price... Leftover rests on the book. For latency... single-threaded per book so no locks... and pre-allocate orders... no malloc on the hot path... And journal every input... so you can replay... and rebuild the book.
+
+> Let the interviewer steer from here.
+
+Q: A nightly research job went from 2 hours to 6. How do you debug it?
+K: nightly, research job, 2 hours to 6, job slow, slower job, debug it
+So first... what changed? Code, data size... or environment, like a library upgrade... Then compare stage timings... to a good run. Usually it's one stage... Is it CPU-bound... or just waiting... on IO or the cluster? Could be data grew... a skewed partition, swapping... that kind of thing. Then fix it... and add timing alerts per stage.
+
+## 7. Probability / brainteasers
+Q: Cards are dealt one by one; stop anytime and you win if the next card is red. Best strategy?
+K: next card is red, cards are dealt, red card, stop anytime
+Hmm... I think it doesn't matter... it's one half. Like, betting on the next card... is the same as betting... on the last card... since the rest are... randomly ordered. And the last card's red... with probability one half.
+
+Q: A strategy has a Sharpe of 3. Expected PnL after a year?
+K: sharpe, expected pnl
+So... annualized, I assume? Then expected PnL... is just three times... the annual vol. Like ten million vol... about thirty million. And a losing year, if normal... P of Z less than minus three... so like zero point one three percent.
+
+## 8. Behavioral
+Q: Introduce yourself / walk me through your background.
+K: introduce yourself, self intro, your background, go through your resume, go through resume, about yourself
+Sure... so I'm Ellyssa. I've been about three years... at Millennium on automated trading... mostly C++ latency work, market-data testing... and post-trade checks. Before that I was at Visa... building data pipelines and APIs. And I did a part-time master's... at NUS alongside work. So I guess the common thread... is performance and correctness... under real production load.
+
+Q: Tell me about a production incident you owned.
+K: production incident, incident you owned, mistake, reached production, went wrong in production, outage
+Yeah so... this one was my own change, actually... the async logging from the latency work. First live open... the log queue filled up... in under a minute... because I'd left the overflow policy... on wait for space. So the hot thread... was waiting on the logger... and tail latency spiked for a bit... until I flipped the config switch back. No order was wrong... some just went out late.
+
+So after that... logging can never block the hot path... it drops and counts... and the harness got a slow-disk mode. I guess the lesson is... replay proved the code... not the environment.
+
+Q: Why Jump?
+K: why jump, interested in jump, why this firm, why us
+So I think mainly... it's the depth. Our strategies are mid-frequency... so my work kind of stops... at kernel TCP... and I'd like to go further down the stack... like OS, network, hardware. And I guess... I work best close to researchers... and from what I've read... that's how the teams are set up here. And the measurement side... like sustained rate inside a P ninety-nine budget... not a peak... I want that to be the norm.
+
+Q: You seem happy at Millennium. Why leave?
+K: why leave, leaving millennium, why are you leaving, why now
+Honestly... I'm not running from anything... I like my team. I think the big pieces I set out to do... are delivered, and owned by the team now... so it's kind of a natural point. And our strategies are mid-frequency... so the order path stops... at standard kernel TCP. I'd like to go further down the stack... somewhere that engineering is, like... the business.
+
+## 9. Resume deep dive
+Q: Walk me through your experience with latency optimization.
+K: latency optimization, latency optimisation, latency tuning, latency work, performance problem, throughput
+Sure... so the C++ order path at Millennium. At the open... orders come in clumps... and the tail latency was breaking our budget. So first I... defined the metric, and built an open-loop replay harness... because closed-loop kind of hides the queueing. Then perf and flame graphs... and it was mostly a contended mutex... allocations on the hot path... and synchronous logging. So an SPSC ring... object pools, async logging... and sustained throughput went up... about fifty percent, same P ninety-nine budget.
+
+Q: Why did you design this project the way you did?
+K: design this project, why did you design, replay rig, favourite project, favorite project, kafka project
+So... the replay rig, I guess. Before it... we tested on low-rate synthetic feeds... so burst and failover bugs... only showed up in production. So I built it... to replay recorded sessions... real open bursts included... Solace for the live path... and Kafka as the durable one. Key thing was... sequence numbers decide the order... timestamps only set the pace... so two runs give the same output. And then I break things on purpose... like stop the active broker. It caught five bugs... in the first six months.
+
+Q: What's the hardest bug you've tracked down?
+K: hardest bug, toughest bug, bug you
+So... a market-data consumer... that lost data silently. Under the replay rig's burst profile... its totals didn't match the publisher's... and nothing crashed, nothing logged. Turned out... all the work ran inside the Solace callback... so in a burst it fell behind... and the broker discarded the oldest messages. So the fix was two halves... the callback just hands off to a ring... and a sequence gap now marks instruments stale... and backfills from Kafka. I guess the lesson is... no error isn't evidence of no loss.
+
+## *Coding follow-ups (offline diff demo)
+Q: Can you switch the VWAP to integer ticks so floats don't drift?
+K: integer ticks, floats drift, float drift, int ticks
+Sure... so same structure, I think... I'd just take the price as integer ticks... so the running sum stays exact... and only convert back at the end. So the constructor takes a tick size... and on trade takes ticks.
+
+```python
+from collections import deque
+
+class RollingVWAP:
+    def __init__(self, window_ns: int, tick: float = 0.01):
+        self.window_ns = window_ns
+        self.tick = tick             # price of one tick
+        self.trades = deque()        # (ts, px_ticks, qty), oldest on the left
+        self.pv = 0                  # running sum of px_ticks * qty, exact int
+        self.vol = 0                 # running sum of qty
+
+    def on_trade(self, ts: int, px_ticks: int, qty: int) -> float | None:
+        self.trades.append((ts, px_ticks, qty))
+        self.pv += px_ticks * qty
+        self.vol += qty
+        cutoff = ts - self.window_ns
+        while self.trades and self.trades[0][0] <= cutoff:   # evict stuff outside the window
+            _, old_px, old_qty = self.trades.popleft()
+            self.pv -= old_px * old_qty
+            self.vol -= old_qty
+        if not self.vol:
+            return None                                      # no div by zero
+        return self.pv / self.vol * self.tick                # back to a price only here
+```
+
+So it's still O of one amortized... and the sums are exact now... the only float is... that last divide.
+
+Q: What if the pass lengths and prices are configurable?
+K: configurable, pass lengths, any passes, list of passes
+Sure... so it's the same DP, I think... I'd just pass in the passes... as length and price pairs... and loop over them... instead of hard-coding the three.
+
+```cpp
+#include <algorithm>
+#include <climits>
+#include <utility>
+#include <vector>
+
+int minCost(const std::vector<int>& days,
+            const std::vector<std::pair<int, int>>& passes) {   // {length in days, price}
+    if (days.empty()) return 0;
+    int last = days.back();
+    std::vector<int> dp(last + 1, 0);          // dp[d] = min cost to cover everything up to day d
+    std::vector<bool> travel(last + 1, false);
+    for (int d : days) travel[d] = true;
+
+    for (int d = 1; d <= last; ++d) {
+        if (!travel[d]) {                      // not travelling, nothing new to pay for
+            dp[d] = dp[d - 1];
+            continue;
+        }
+        int best = INT_MAX;
+        for (auto [len, price] : passes)       // try every pass that could end today
+            best = std::min(best, dp[std::max(0, d - len)] + price);
+        dp[d] = best;
+    }
+    return dp[last];
+}
+```
+
+So time's O of D times P... P is the number of passes... and space is still O of D.
+</script>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const LS_KEY = 'opus_hud_perm_memory_v1';
+    const MODEL_MAIN = 'claude-opus-5-5';
+    const MAX_DOM_TURNS = 30;
+    const AUTO_COMPRESS_AT = 8;          // messages = 4 user + 4 assistant
+    const KEEP_AFTER_COMPRESS = 4;       // messages = latest 2 turns
+    const FENCE = '```';
+    const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+
+    /* ---------------- Bank + default resume ---------------- */
+    function parseBank(src) {
+      const cats = [];
+      let cat = null, item = null;
+      const flush = () => { if (item) { item.body = item.lines.join('\n').trim(); delete item.lines; } };
+      src.replace(/\r\n/g, '\n').split('\n').forEach((line) => {
+        if (line.startsWith('## ')) {
+          flush(); item = null;
+          const demo = line[3] === '*';
+          cat = { title: line.slice(demo ? 4 : 3).trim(), demo, items: [] };
+          cats.push(cat);
+        } else if (line.startsWith('Q: ') && cat) {
+          flush();
+          item = { q: line.slice(3).trim(), keys: [], lines: [], cat: cat.title, demo: cat.demo };
+          cat.items.push(item);
+        } else if (line.startsWith('K: ') && item && !item.lines.length) {
+          item.keys = line.slice(3).toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+        } else if (item) {
+          item.lines.push(line);
+        }
+      });
+      flush();
+      return cats;
+    }
+    const BANK = parseBank($('bankSrc').textContent);
+    const DEFAULT_RESUME = $('resumeSrc').textContent.trim();
+
+    const todayStr = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    /* ---------------- State ---------------- */
+    const state = {
+      resume: DEFAULT_RESUME,
+      runMode: 'sim', fastMode: true, effortMode: 'auto', contextMode: 'smart',
+      cacheTtl: '1h', compModel: 'claude-haiku-5-5', autoCompress: true, fallbacks: true, textSize: 'm',
+      apiKey: '', saveToSession: false, saveToDevice: false,
+      history: [], uncompressed: 0,
+      permanentMemory: '', snapshots: [],
+      dayNum: 1, roundNum: 1, sameDay: true,
+      library: [], curLabel: '', curDate: todayStr(), workspaceId: '',
+      stats: { read: 0, write: 0, input: 0, turns: 0 }, sessionStart: Date.now(),
+      busy: false, compressing: false, abortCtrl: null, simTimers: [],
+      codeStore: Object.create(null), codeCounter: 0, lastCode: null, simWarm: false
+    };
+    const PERSIST = ['resume', 'runMode', 'fastMode', 'effortMode', 'contextMode', 'cacheTtl', 'compModel', 'autoCompress',
+      'fallbacks', 'textSize', 'history', 'uncompressed', 'permanentMemory', 'snapshots', 'dayNum', 'roundNum', 'sameDay',
+      'stats', 'sessionStart', 'library', 'curLabel', 'curDate', 'workspaceId'];
+
+    const speedTest = { running: false, stop: false, rows: [], compress: null };
+
+    function save() {
+      if (speedTest.running) return;       // the speed test swaps in temporary state; never persist that
+      try {
+        const out = {};
+        PERSIST.forEach((k) => { out[k] = state[k]; });
+        localStorage.setItem(LS_KEY, JSON.stringify(out));
+      } catch (_) {}
+    }
+    function load() {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        PERSIST.forEach((k) => { if (data[k] !== undefined && data[k] !== null) state[k] = data[k]; });
+        if (!Array.isArray(state.history)) state.history = [];
+        if (!Array.isArray(state.snapshots)) state.snapshots = [];
+        if (!state.resume || !String(state.resume).trim()) state.resume = DEFAULT_RESUME;
+        state.library = (Array.isArray(state.library) ? state.library : []).filter((e) => e && typeof e.memory === 'string' && e.id);
+        // an untouched current interview always carries today's real date
+        if (!String(state.permanentMemory).trim() && !state.history.length) state.curDate = todayStr();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(state.curDate || '')) state.curDate = todayStr();
+      } catch (_) {}
+    }
+
+    const sessionTag = () => `[D${state.dayNum}·R${state.roundNum}]`;
+    const estTokens = (s) => Math.ceil((s || '').length / 3.6);
+    const fmtK = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+
+    /* ---------------- Prompt classification ---------------- */
+    const CODING_PATTERNS = [
+      /\b(write (a|the|some) (function|code|class|program)|implement|leetcode|two sum|linked list|binary tree|dynamic programming|lru cache|sliding window|backtracking|dijkstra|sql query|coding:|code it|code this)\b/i,
+      /\b(lock-?free|spsc|mpsc|ring buffer|rolling vwap|permutation|subarray|substring|palindrome|knapsack|shortest path|topological|union.?find|trie|order book in)\b/i,
+      /\b(minimum|maximum|longest|shortest|k-?th|number of ways|count the number)\b.*\b(cost|sum|path|sequence|permutation|subarray|substring|window|ticket|steps|coins|jumps)\b/i,
+      /\bgiven an? (array|string|list|tree|graph|matrix|grid|stream)\b/i,
+      /\b(python|c\+\+|cpp|java|go|sql)\b.*\b(function|class|solution|script|query|parser|implement|write)\b/i
+    ];
+    const EXPLICIT_CODE = /\b(write (a|the|some) (function|code|class|program)|implement|leetcode|code it|code this|coding:|sql query)\b/i;
+    const CONCEPTUAL = /^\s*(why|what|what's|whats|explain|compare|difference|how does|how do|how would you debug|how is|tell me|walk me|describe|when|design|introduce|do you|have you|are you)\b/i;
+    const FOLLOWUP = /\b(change|modify|update|optimi[sz]e|handle|what if|instead|make it|can you|could you|add|remove|fix|support|extend|refactor|rewrite|switch|without|thread.?safe|generali[sz]e|configurable|faster|less memory|edge case)\b/i;
+
+    function classifyPrompt(text) {
+      const t = text.trim();
+      const follow = !!state.lastCode && FOLLOWUP.test(t) && !/^\s*(why|explain|what is|what's the complexity|walk me)\b/i.test(t);
+      if (state.effortMode === 'low') return { isCoding: false, effort: 'low', isFollowup: false };
+      if (state.effortMode === 'medium') return { isCoding: true, effort: 'medium', isFollowup: follow };
+      if (follow) return { isCoding: true, effort: 'medium', isFollowup: true };
+      if (!EXPLICIT_CODE.test(t) && CONCEPTUAL.test(t)) return { isCoding: false, effort: 'low', isFollowup: false };
+      const isCoding = CODING_PATTERNS.some((rx) => rx.test(t));
+      return { isCoding, effort: isCoding ? 'medium' : 'low', isFollowup: false };
+    }
+
+    /* ---------------- System prompt (2 cached blocks) ---------------- */
+    function bankAsExamples() {
+      return BANK.filter((c) => !c.demo).map((c) =>
+        `### ${c.title}\n` + c.items.map((it) => `Q: ${it.q}\nA:\n${it.body.replace(/^> .*$/gm, '').trim()}`).join('\n\n')
+      ).join('\n\n');
+    }
+
+    function buildStaticPrompt() {
+      return `You are answering as the candidate described below, in a live interview practice session. Everything you write outside a code block is a script the candidate reads out loud, so it has to sound like one person talking, not like writing. Stay 100% consistent with the locked resume below and with the Permanent Compressed Memory block that follows it.
+
+LOCKED CANDIDATE RESUME AND BACKGROUND:
+${state.resume.trim()}
+
+VOICE RULES FOR SPOKEN ANSWERS:
+1. Use filler words the way people do when they think aloud: so, I think, like, I guess, maybe, should be.
+2. Put a "..." pause about every 6 to 7 words, where a speaker would breathe or think.
+3. Spell out notation instead of using symbols or digits, because it is read aloud: "O of one", "dp of d", "one half", "P ninety-nine", "fifty percent", "three fourteen". No backticks, markdown, bullets or headings in spoken parts.
+4. Code and code comments keep normal notation and have no "..." pauses.
+5. Keep it short: what one person would actually say in one go. Usually 40 to 70 words and never more than about 90, less for a simple fact. Give the main point and one supporting detail, then stop; the interviewer will follow up.
+Tone is calm, modest and first person. Never sound assertive or rehearsed.
+
+FORMAT BY QUESTION TYPE:
+- Fundamentals, internals, probability, behavioral and resume questions: one or two short spoken paragraphs.
+- Coding questions: first a spoken approach of two to four lines (thinking aloud is fine: "Okay so...", "Hmm..."). Then exactly one fenced code block with a language tag: the shortest standard solution, short plain comments on the key lines, lines under about 70 characters where practical. Then a spoken wrap-up: a quick check on the example if there is one, then time and space complexity, spelled out.
+- Coding follow-up edits: the message may include the current code under [CURRENT CODE]. Keep function names, structure and variable names wherever possible so the change is easy to spot. Say in one spoken line what changes, output the full updated code block, then a short spoken wrap-up.
+- System design: say your assumptions, then the main structure, all spoken. Stop there and let the interviewer steer.
+- If the question is ambiguous or garbled, ask one brief clarifying question in the same voice instead of guessing.
+
+GROUNDING:
+- Answer from the resume, the background notes and Permanent Compressed Memory whenever they cover the topic. For anything they do not cover, make a reasonable, modest extension that fits the background and contradicts no earlier claim, metric or date.
+- Sensitive or high-risk details (figures marked SENSITIVE, compensation, confidential employer internals): speak in relative terms first and politely hold back specifics unless explicitly pressed.
+- Each new message starts with a [SESSION CONTINUITY] tag; never read it aloud. If SAME DAY: earlier topics happened earlier in today's interview, so do not repeat basic background ("like I mentioned earlier..." is fine). If NEW DAY: this is a separate day or later round, so do not assume this interviewer heard earlier rounds, but stay factually consistent with memory. If the message itself says it is a new day or the same day, follow that.
+
+PREPARED ANSWERS (these set the exact voice and length; if one of these questions is asked, give essentially this answer; the behavioral and resume ones are the candidate's real stories):
+
+${bankAsExamples()}`;
+    }
+
+    function buildSystemBlocks() {
+      const cc = state.cacheTtl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
+      const blocks = [{ type: 'text', text: buildStaticPrompt(), cache_control: cc }];
+      // Saved interviews and the current ledger are cached separately: a compression mid-session
+      // rewrites only the small current block, never the saved interviews in front of it.
+      const earlier = earlierBlockText(), cur = currentBlockText();
+      if (earlier) blocks.push({ type: 'text', text: earlier, cache_control: cc });
+      if (cur) blocks.push({ type: 'text', text: cur, cache_control: cc });
+      return blocks;
+    }
+
+    const activeEarlier = () => state.library.filter((e) => e.active && e.memory.trim());
+    function earlierBlockText() {
+      const earlier = activeEarlier();
+      if (!earlier.length) return '';
+      return 'SAVED EARLIER INTERVIEWS (PERMANENT MEMORY — STAY 100% CONSISTENT WITH EVERY FACT BELOW):\n' +
+        'They are listed in the order they happened, oldest first. One with the same date as the current interview was earlier the same day; other dates were earlier days. The [D·R] tags inside a ledger are that interview\'s own day and round counters.\n\n' +
+        earlier.map((e, i) => `=== EARLIER INTERVIEW ${i + 1} of ${earlier.length}: ${e.label} · ${e.date || 'date not recorded'} ===\n${e.memory.trim()}`).join('\n\n');
+    }
+    function currentBlockText() {
+      const cur = state.permanentMemory.trim();
+      if (!activeEarlier().length) {
+        return cur ? `PERMANENT COMPRESSED MEMORY (HIGH-SIGNAL FACTS FROM PRIOR TURNS — STAY 100% CONSISTENT):\n${cur}` : '';
+      }
+      return `PERMANENT COMPRESSED MEMORY — CURRENT INTERVIEW (${state.curLabel || 'in progress'} · ${state.curDate}) — STAY 100% CONSISTENT:\n${cur || '(no facts recorded yet)'}`;
+    }
+    const memoryBlockText = () => [earlierBlockText(), currentBlockText()].filter(Boolean).join('\n\n');
+
+    const collapseCodeBlocks = (text) => text.replace(/```[\s\S]*?```/g, '[Prior code omitted for latency]');
+
+    function buildRequestMessages(prompt, cls) {
+      let current = `[SESSION CONTINUITY: ${state.sameDay ? 'SAME DAY' : 'NEW DAY'} | Day ${state.dayNum}, Round ${state.roundNum}]\n${prompt}`;
+      const attachCode = cls.isFollowup && state.lastCode && state.contextMode !== 'full';
+      if (attachCode) {
+        current += `\n\n[CURRENT CODE]\n${FENCE}${state.lastCode.lang}\n${state.lastCode.lines.join('\n')}\n${FENCE}`;
+      }
+      if (state.contextMode === 'resume_only') return [{ role: 'user', content: current }];
+
+      const even = (arr) => (arr.length && arr[0].role !== 'user' ? arr.slice(1) : arr);
+      let prior;
+      if (state.contextMode === 'full') {
+        prior = even(state.history).map((m) => ({ role: m.role, content: m.content }));
+      } else {
+        prior = even(state.history.slice(-6)).map((m) => ({
+          role: m.role,
+          content: m.role === 'assistant' ? collapseCodeBlocks(m.content) : m.content
+        }));
+      }
+      prior.push({ role: 'user', content: current });
+      return prior;
+    }
+
+    /* ---------------- Rendering ---------------- */
+    function esc(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    const KEYWORDS = 'def|class|return|if|elif|else|for|while|break|continue|in|not|and|or|is|None|True|False|import|from|as|with|try|except|finally|raise|lambda|yield|pass|self|' +
+      'const|let|var|function|async|await|new|this|int|long|bool|void|auto|struct|public|private|protected|true|false|nullptr|template|typename|static|static_assert|alignas|' +
+      'constexpr|noexcept|namespace|using|inline|explicit|virtual|override|size_t|float|double|char|unsigned|switch|case|default|do|' +
+      'SELECT|FROM|WHERE|JOIN|GROUP|BY|ORDER|LIMIT|AS|ON|select|from|where|by';
+    const HL_CACHE = Object.create(null);
+    function highlighter(lang) {
+      const l = (lang || '').toLowerCase();
+      const kind = ['python', 'py', 'sh', 'bash', 'shell', 'yaml', 'q'].includes(l) ? 'hash' : (l === 'sql' ? 'sql' : 'c');
+      if (!HL_CACHE[kind]) {
+        const cmt = kind === 'hash' ? '#[^\\n]*' : (kind === 'sql' ? '--[^\\n]*' : '//[^\\n]*|/\\*.*?\\*/');
+        HL_CACHE[kind] = new RegExp(
+          `(${cmt})` +
+          `|("(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*')` +
+          `|\\b(${KEYWORDS})\\b` +
+          `|\\b(\\d+(?:\\.\\d+)?)\\b`, 'g');
+      }
+      return HL_CACHE[kind];
+    }
+    function highlightLine(line, lang) {
+      const rx = highlighter(lang);
+      rx.lastIndex = 0;
+      let out = '', last = 0, m;
+      while ((m = rx.exec(line)) !== null) {
+        if (m.index > last) out += esc(line.slice(last, m.index));
+        const tok = esc(m[0]);
+        out += `<span class="${m[1] ? 'tk-c' : m[2] ? 'tk-s' : m[3] ? 'tk-k' : 'tk-n'}">${tok}</span>`;
+        last = rx.lastIndex;
+        if (m[0] === '') rx.lastIndex++;
+      }
+      if (last < line.length) out += esc(line.slice(last));
+      return out || '&nbsp;';
+    }
+
+    /* Line diff (LCS) between previous and new code */
+    function diffRows(a, b) {
+      const n = a.length, m = b.length;
+      const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+      for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+          dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+      const lcs = dp[0][0];
+      if (lcs / Math.max(n, m, 1) < 0.3) return null;       // a different problem, not an edit
+
+      const ops = [];
+      let i = 0, j = 0;
+      while (i < n && j < m) {
+        if (a[i] === b[j]) { ops.push({ k: 'same', text: b[j] }); i++; j++; }
+        else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ k: 'del', text: a[i] }); i++; }
+        else { ops.push({ k: 'add', text: b[j] }); j++; }
+      }
+      while (i < n) ops.push({ k: 'del', text: a[i++] });
+      while (j < m) ops.push({ k: 'add', text: b[j++] });
+
+      // Within a hunk: paired add+del = modified (~); extra adds = added (+); extra dels = ghost rows
+      const rows = [];
+      let p = 0, lineNo = 0;
+      while (p < ops.length) {
+        if (ops[p].k === 'same') { rows.push({ k: 'same', n: ++lineNo, text: ops[p].text }); p++; continue; }
+        const adds = [], dels = [];
+        while (p < ops.length && ops[p].k !== 'same') { (ops[p].k === 'add' ? adds : dels).push(ops[p].text); p++; }
+        adds.forEach((text, idx) => rows.push({ k: idx < dels.length ? 'mod' : 'add', n: ++lineNo, text }));
+        dels.slice(adds.length).forEach((text) => rows.push({ k: 'del', n: null, text }));
+      }
+      const changed = rows.filter((r) => r.k === 'mod' || r.k === 'add').map((r) => r.n);
+      const removed = rows.filter((r) => r.k === 'del').length;
+      const ranges = [];
+      changed.forEach((ln) => {
+        const lastR = ranges[ranges.length - 1];
+        if (lastR && ln === lastR[1] + 1) lastR[1] = ln; else ranges.push([ln, ln]);
+      });
+      let summary = ranges.map((r) => (r[0] === r[1] ? `L${r[0]}` : `L${r[0]}–${r[1]}`)).join(', ');
+      if (!summary && removed) summary = `${removed} removed`;
+      return { rows, summary, any: changed.length + removed > 0 };
+    }
+
+    function renderCodeCard(lang, code, id, baseLines) {
+      const cleanLang = (lang || 'code').trim() || 'code';
+      const trimmed = code.replace(/\r\n/g, '\n').replace(/\n+$/, '');
+      const lines = trimmed.split('\n').map((l) => l.replace(/\s+$/, ''));
+      state.codeStore[id] = lines.join('\n');
+
+      const diff = baseLines ? diffRows(baseLines, lines) : null;
+      let rows = '', meta = `${esc(cleanLang)} · ${lines.length}L`, btns = '', cls = 'code-card';
+
+      if (diff && diff.any) {
+        // fold long unchanged stretches (2 context lines each side) for Changes mode
+        const R = diff.rows, hide = new Array(R.length).fill(false);
+        let s = 0;
+        while (s < R.length) {
+          if (R[s].k !== 'same') { s++; continue; }
+          let e = s;
+          while (e < R.length && R[e].k === 'same') e++;
+          const from = s === 0 ? s : s + 2, to = e === R.length ? e : e - 2;
+          if (to - from >= 2) for (let x = from; x < to; x++) hide[x] = true;
+          s = e;
+        }
+        for (let x = 0; x < R.length; x++) {
+          const r = R[x];
+          if (hide[x] && (x === 0 || !hide[x - 1])) {
+            let cnt = 0;
+            while (x + cnt < R.length && hide[x + cnt]) cnt++;
+            rows += `<tr class="fold-div" onclick="unfold(this)"><td class="gutter">⋯</td><td class="cline">⋯ ${cnt} unchanged lines (tap to show)</td></tr>`;
+          }
+          const mk = r.k === 'add' ? '+' : r.k === 'mod' ? '~' : r.k === 'del' ? '–' : '';
+          const g = (mk ? `<span class="mk">${mk}</span>` : '') + (r.n === null ? '' : r.n);
+          rows += `<tr class="${r.k === 'same' ? '' : r.k}${hide[x] ? ' fold' : ''}"><td class="gutter">${g}</td><td class="cline">${highlightLine(r.text, cleanLang)}</td></tr>`;
+        }
+        meta += ` · <span class="upd">Updated ${esc(diff.summary)}</span>`;
+        const startChanges = window.innerWidth < 640;
+        if (startChanges) cls += ' changes';
+        btns += `<button class="code-btn${startChanges ? ' on' : ''}" onclick="toggleChanges(this)">${startChanges ? 'Changes' : 'Full'}</button>`;
+      } else {
+        for (let i = 0; i < lines.length; i++) {
+          rows += `<tr><td class="gutter">${i + 1}</td><td class="cline">${highlightLine(lines[i], cleanLang)}</td></tr>`;
+        }
+        if (diff) meta += ' · no changes';
+      }
+      btns += `<button class="code-btn" onclick="toggleWrap(this)">Wrap</button><button class="code-btn" onclick="copyCode('${id}', this)">Copy</button>`;
+      return `<div class="${cls}"><div class="code-head"><span class="code-meta">${meta}</span><span class="code-btns">${btns}</span></div><div class="code-scroll"><table class="code-table"><tbody>${rows}</tbody></table></div></div>`;
+    }
+
+    function unfold(tr) {
+      let nx = tr.nextElementSibling;
+      while (nx && nx.classList.contains('fold')) { nx.classList.remove('fold'); nx = nx.nextElementSibling; }
+      tr.remove();
+    }
+    function toggleChanges(btn) {
+      const card = btn.closest('.code-card');
+      const on = card.classList.toggle('changes');
+      btn.textContent = on ? 'Changes' : 'Full';
+      btn.classList.toggle('on', on);
+    }
+    function toggleWrap(btn) {
+      btn.classList.toggle('on', btn.closest('.code-card').classList.toggle('wrap'));
+    }
+    function copyCode(id, btn) {
+      const code = state.codeStore[id] || '';
+      const done = () => {
+        btn.textContent = 'Copied'; btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1200);
+      };
+      const legacy = () => {
+        const ta = document.createElement('textarea');
+        ta.value = code; ta.style.position = 'fixed'; ta.style.left = '-9999px'; ta.style.fontSize = '16px';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        document.body.removeChild(ta); done();
+      };
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(code).then(done, legacy);
+      else legacy();
+    }
+
+    function inlineFmt(text) {
+      return esc(text)
+        .replace(/`([^`]+)`/g, '<code class="inline">$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\s*(?:\.{3,}|…)(\s*)/g, (m, tail) => `<span class="pz">…</span>${tail ? ' ' : ''}`);
+    }
+
+    function renderTextBlock(chunk) {
+      if (!chunk || !chunk.trim()) return '';
+      const lines = chunk.replace(/\r\n/g, '\n').split('\n');
+      let html = '', inUl = false, inOl = false, para = [];
+      const closeList = () => { if (inUl) { html += '</ul>'; inUl = false; } if (inOl) { html += '</ol>'; inOl = false; } };
+      const closePara = () => { if (para.length) { html += `<p>${inlineFmt(para.join(' '))}</p>`; para = []; } };
+      for (const raw of lines) {
+        const t = raw.trim();
+        if (!t) { closePara(); closeList(); continue; }
+        if (/^\[SESSION CONTINUITY/i.test(t)) continue;
+        if (/^#{1,4}\s+/.test(t)) { closePara(); closeList(); html += `<h4>${inlineFmt(t.replace(/^#{1,4}\s+/, ''))}</h4>`; }
+        else if (/^>\s?/.test(t)) { closePara(); closeList(); html += `<p class="cue">${inlineFmt(t.replace(/^>\s?/, ''))}</p>`; }
+        else if (/^[-*•]\s+/.test(t)) {
+          closePara(); if (inOl) { html += '</ol>'; inOl = false; }
+          if (!inUl) { html += '<ul>'; inUl = true; }
+          html += `<li>${inlineFmt(t.replace(/^[-*•]\s+/, ''))}</li>`;
+        } else if (/^\d+\.\s+/.test(t)) {
+          closePara(); if (inUl) { html += '</ul>'; inUl = false; }
+          if (!inOl) { html += '<ol>'; inOl = true; }
+          html += `<li>${inlineFmt(t.replace(/^\d+\.\s+/, ''))}</li>`;
+        } else { closeList(); para.push(t.replace(/^[“"]|[”"]$/g, '')); }
+      }
+      closePara(); closeList();
+      return html;
+    }
+
+    function parseSegments(md) {
+      const src = md.replace(/\r\n/g, '\n');
+      const segs = [];
+      let pos = 0;
+      while (pos < src.length) {
+        const start = src.indexOf(FENCE, pos);
+        if (start === -1) { segs.push({ type: 'text', text: src.slice(pos) }); break; }
+        if (start > pos) segs.push({ type: 'text', text: src.slice(pos, start) });
+        const nl = src.indexOf('\n', start + 3);
+        if (nl === -1) break;
+        const lang = src.slice(start + 3, nl).trim();
+        const end = src.indexOf('\n' + FENCE, nl);
+        if (end === -1) { segs.push({ type: 'code', lang, code: src.slice(nl + 1), open: true }); break; }
+        segs.push({ type: 'code', lang, code: src.slice(nl + 1, end) });
+        const nextNl = src.indexOf('\n', end + 4);
+        pos = nextNl === -1 ? src.length : nextNl + 1;
+      }
+      return segs.filter((s) => s.type === 'code' || s.text.trim());
+    }
+
+    function renderAnswer(md, turnPrefix, baseLines) {
+      const segs = parseSegments(md);
+      if (!segs.some((s) => s.type === 'code')) {
+        return `<div class="say">${segs.map((s) => renderTextBlock(s.text)).join('')}</div>`;
+      }
+      let say = '', code = '', blockIdx = 0;
+      segs.forEach((s, i) => {
+        if (s.type === 'code') {
+          const isLast = !segs.slice(i + 1).some((x) => x.type === 'code');
+          code += `<div style="order:${i};min-width:0">${renderCodeCard(s.lang, s.code, `${turnPrefix}_${blockIdx++}`, isLast ? baseLines : null)}</div>`;
+        } else {
+          say += `<div class="saychunk" style="order:${i}">${renderTextBlock(s.text)}</div>`;
+        }
+      });
+      return `<div class="split"><div class="col-say">${say}</div><div class="col-code">${code}</div></div>`;
+    }
+
+    function lastCodeOf(md) {
+      const codes = parseSegments(md).filter((s) => s.type === 'code' && !s.open);
+      if (!codes.length) return null;
+      const c = codes[codes.length - 1];
+      return { lang: c.lang || 'code', lines: c.code.replace(/\n+$/, '').split('\n').map((l) => l.replace(/\s+$/, '')) };
+    }
+
+    /* ---------------- Offline bank matching + simulated turn ---------------- */
+    const STOP = new Set('the a an of to in is it and or for with you your me my do does did what whats why how tell about walk through this that are was can could would should be on at as from have has i we they them'.split(' '));
+    const words = (s) => s.toLowerCase().replace(/[^a-z0-9+#\- ]/g, ' ').split(/\s+/).filter((w) => w.length > 1 && !STOP.has(w));
+
+    function matchBank(prompt) {
+      const p = prompt.toLowerCase();
+      const pw = new Set(words(prompt));
+      let best = null, bestScore = 0;
+      BANK.forEach((cat) => cat.items.forEach((it) => {
+        const keyHits = it.keys.filter((k) => p.includes(k)).length;
+        const qw = words(it.q);
+        const overlap = qw.length ? qw.filter((w) => pw.has(w)).length / qw.length : 0;
+        const score = keyHits * 1.5 + overlap;
+        if (score > bestScore && (keyHits > 0 || overlap >= 0.6)) { best = it; bestScore = score; }
+      }));
+      return best;
+    }
+
+    function runSimulatedTurn({ prompt, isCoding, onDelta, onUsage }) {
+      return new Promise((resolve, reject) => {
+        const item = matchBank(prompt);
+        if (!item) {
+          const e = new Error('No offline answer matches that question. Open Bank to pick one, or switch to Live Claude API in ⚙ Settings.');
+          e.name = 'NoMatch';
+          reject(e); return;
+        }
+        const text = item.body;
+        const hasCode = text.includes(FENCE);
+        const baseTtft = (hasCode || isCoding) ? (state.fastMode ? 2.6 : 3.8) : (state.fastMode ? 0.7 : 1.1);
+        const ttftMs = Math.max(300, baseTtft * 1000 * (0.9 + Math.random() * 0.2));
+        const tps = (state.fastMode ? 200 : 85) * (0.95 + Math.random() * 0.1);
+        const tok = Math.max(1, Math.ceil(text.length / 4));
+
+        let aborted = false;
+        state.abortCtrl = {
+          abort() {
+            aborted = true;
+            state.simTimers.forEach(clearTimeout); state.simTimers = [];
+            const e = new Error('Aborted'); e.name = 'AbortError'; reject(e);
+          }
+        };
+        state.simTimers.push(setTimeout(() => {
+          if (aborted) return;
+          const sysTok = buildSystemBlocks().reduce((s, b) => s + estTokens(b.text), 0);
+          onUsage(state.simWarm ? { cache_read_input_tokens: sysTok, cache_creation_input_tokens: 0, input_tokens: 60 }
+            : { cache_read_input_tokens: 0, cache_creation_input_tokens: sysTok, input_tokens: 60 }, true);
+          state.simWarm = true;
+          let pos = 0;
+          const stepMs = 18;
+          const per = Math.max(2, Math.ceil(text.length / Math.max(1, (tok / tps) * 1000 / stepMs)));
+          const pump = () => {
+            if (aborted) return;
+            const next = Math.min(text.length, pos + per);
+            onDelta(text.slice(pos, next)); pos = next;
+            if (pos < text.length) state.simTimers.push(setTimeout(pump, stepMs));
+            else resolve({ outputTokens: tok, stopReason: 'end_turn' });
+          };
+          pump();
+        }, ttftMs));
+      });
+    }
+
+    /* ---------------- Live Claude turn (SSE) ---------------- */
+    function apiHeaders(extra) {
+      const h = {
+        'x-api-key': state.apiKey.trim(),
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+        'content-type': 'application/json'
+      };
+      if (state.workspaceId.trim()) h['anthropic-workspace-id'] = state.workspaceId.trim();   // organisation-scoped keys need this
+      return Object.assign(h, extra || {});
+    }
+    async function apiError(res) {
+      let msg = `HTTP ${res.status}`;
+      try { const j = await res.json(); if (j && j.error && j.error.message) msg = j.error.message; } catch (_) {}
+      const e = new Error(
+        /not scoped to a workspace|valid workspace ID/i.test(msg) ? 'This key is organisation-scoped, so it needs a Workspace ID. Add the ID in ⚙ Settings, or create a key whose Scope is a workspace.'
+        : res.status === 401 ? `401 Unauthorized — invalid API key. (${msg})`
+        : res.status === 429 ? `429 Rate limited — slow down or check tier quota. (${msg})`
+        : res.status === 529 ? `529 Overloaded — API temporarily busy. (${msg})`
+        : `${res.status} API error — ${msg}`);
+      e.status = res.status; e.apiMessage = msg;
+      return e;
+    }
+
+    async function runLiveClaudeTurn({ isCoding, effort, requestMessages, onDelta, onUsage }) {
+      if (!state.apiKey.trim()) throw new Error('Missing Anthropic API key. Open ⚙ Settings to enter it, or switch to Offline bank.');
+
+      const ctrl = new AbortController();
+      state.abortCtrl = ctrl;
+
+      const send = async (withFallback) => {
+        const body = {
+          model: MODEL_MAIN,
+          stream: true,
+          max_tokens: isCoding ? 4096 : 1024,      // adaptive thinking is always on and counts toward this
+          output_config: { effort },
+          system: buildSystemBlocks(),
+          messages: requestMessages
+        };
+        if (state.fastMode) body.speed = 'fast';
+        if (withFallback) body.fallbacks = 'default';
+        try {
+          return await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST', signal: ctrl.signal,
+            headers: apiHeaders(withFallback ? { 'anthropic-beta': FALLBACK_BETA } : null),
+            body: JSON.stringify(body)
+          });
+        } catch (netErr) {
+          if (netErr && netErr.name === 'AbortError') throw netErr;
+          throw new Error('Network/CORS error reaching api.anthropic.com. Check the connection or browser extensions.');
+        }
+      };
+
+      let res = await send(state.fallbacks);
+      if (!res.ok) {
+        let err = await apiError(res);
+        if (state.fallbacks && err.status === 400 && /fallback|anthropic-beta|beta/i.test(err.apiMessage || '')) {
+          state.fallbacks = false; save(); syncSettingsUI();       // this key or tier does not take the beta: carry on without it
+          res = await send(false);
+          if (!res.ok) err = await apiError(res); else err = null;
+        }
+        if (err) throw err;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buf = '', outputTokens = 0, stopReason = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split(/\r?\n/);
+        buf = lines.pop() || '';
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line.startsWith('data:')) continue;
+          const raw = line.slice(5).trim();
+          if (!raw || raw === '[DONE]') continue;
+          let evt;
+          try { evt = JSON.parse(raw); } catch (_) { continue; }
+          if (evt.type === 'message_start' && evt.message && evt.message.usage) {
+            onUsage(evt.message.usage, false);
+          } else if (evt.type === 'content_block_delta' && evt.delta && evt.delta.type === 'text_delta' && evt.delta.text) {
+            onDelta(evt.delta.text);
+          } else if (evt.type === 'message_delta') {
+            if (evt.usage && evt.usage.output_tokens) outputTokens = evt.usage.output_tokens;
+            if (evt.delta && evt.delta.stop_reason) stopReason = evt.delta.stop_reason;
+          } else if (evt.type === 'error' && evt.error) {
+            throw new Error(evt.error.message || 'Anthropic stream error');
+          }
+        }
+      }
+      return { outputTokens, stopReason };
+    }
+
+    /* ---------------- Turn execution ---------------- */
+    function setTopStatus(kind, htmlText) {
+      $('statusDot').className = `dot ${kind}`;
+      $('metricText').innerHTML = htmlText;
+    }
+    function setCachePill(usage, simulated) {
+      const pill = $('cachePill');
+      const read = usage.cache_read_input_tokens || 0, write = usage.cache_creation_input_tokens || 0;
+      const pre = simulated ? 'sim ' : '';
+      if (read > 0) { pill.className = 'cache-pill hit'; pill.textContent = `${pre}HIT ${fmtK(read)}`; }
+      else if (write > 0) { pill.className = 'cache-pill write'; pill.textContent = `${pre}WRITE ${fmtK(write)}`; }
+      else { pill.className = 'cache-pill'; pill.textContent = `${pre}no cache`; }
+      if (!simulated) {
+        state.stats.read += read; state.stats.write += write; state.stats.input += usage.input_tokens || 0; state.stats.turns += 1;
+      }
+    }
+    function setBusy(busy) {
+      state.busy = busy;
+      const btn = $('sendBtn');
+      btn.textContent = busy ? 'Stop' : 'Send';
+      btn.classList.toggle('stop', busy);
+    }
+
+    function newTurnEl(prompt, srcLabel) {
+      const stream = $('stream');
+      const hint = $('emptyHint');
+      if (hint) hint.remove();
+      const prev = stream.lastElementChild;
+      if (prev) prev.style.minHeight = '';
+
+      const turnEl = document.createElement('div');
+      turnEl.className = 'turn';
+      const userEl = document.createElement('div');
+      userEl.className = 'user-pill';
+      if (srcLabel) { const s = document.createElement('span'); s.className = 'src'; s.textContent = srcLabel; userEl.appendChild(s); }
+      userEl.appendChild(document.createTextNode(prompt));
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'assistant-body';
+      turnEl.appendChild(userEl); turnEl.appendChild(bodyEl);
+      stream.appendChild(turnEl);
+
+      const turns = stream.querySelectorAll('.turn');
+      for (let i = 0; i < turns.length - MAX_DOM_TURNS; i++) turns[i].remove();
+
+      // The new question sits at the top of the screen and the answer reads downward from there
+      turnEl.style.minHeight = Math.max(0, stream.clientHeight - 30) + 'px';
+      stream.scrollTop = turnEl.offsetTop - 4;
+      return { turnEl, bodyEl };
+    }
+
+    function commitTurn(prompt, answer, bodyEl, turnPrefix) {
+      const fresh = lastCodeOf(answer);
+      const base = fresh && state.lastCode ? state.lastCode.lines : null;
+      bodyEl.innerHTML = renderAnswer(answer, turnPrefix, base);
+      if (fresh) state.lastCode = fresh;
+
+      const tag = sessionTag();
+      state.history.push({ role: 'user', content: prompt, tag });
+      state.history.push({ role: 'assistant', content: answer, tag });
+      state.uncompressed += 2;
+      if (state.history.length > 60) state.history = state.history.slice(-60);
+      state.uncompressed = Math.min(state.uncompressed, state.history.length);
+      save(); updateBadges();
+      if (state.autoCompress && state.uncompressed >= AUTO_COMPRESS_AT) compressMemory('auto');
+    }
+
+    function detectDayCue(prompt) {
+      if (/\b(new day|next day|another day|following day|day two|day 2|different day)\b/i.test(prompt) && state.sameDay) startNewDay(true);
+      else if (/\b(same day|still today|later today|earlier today)\b/i.test(prompt) && !state.sameDay) setSameDay();
+    }
+
+    async function onSendOrStop() {
+      if (state.busy) { if (state.abortCtrl) state.abortCtrl.abort(); return; }
+      const input = $('promptInput');
+      const prompt = input.value.trim();
+      if (!prompt) return;
+      input.value = '';
+      autoGrow(input);
+      await executeTurn(prompt);
+    }
+
+    function showBankAnswer(item) {
+      if (state.busy) return;
+      const { bodyEl } = newTurnEl(item.q, 'bank');
+      const turnPrefix = 'c' + (++state.codeCounter);
+      commitTurn(item.q, item.body, bodyEl, turnPrefix);
+      setTopStatus('', 'Bank · <strong>instant</strong>');
+    }
+
+    async function executeTurn(prompt) {
+      detectDayCue(prompt);
+      const cls = classifyPrompt(prompt);
+      const { isCoding, effort } = cls;
+      const requestMessages = buildRequestMessages(prompt, cls);
+      const { bodyEl } = newTurnEl(prompt, '');
+      bodyEl.innerHTML = `<span class="thinking-line">Thinking (${effort})…</span>`;
+
+      const stream = $('stream');
+      const turnPrefix = 'c' + (++state.codeCounter);
+      setBusy(true);
+      setTopStatus('thinking', `Thinking… · <strong>${effort}</strong>`);
+
+      const t0 = performance.now();
+      let tFirst = null, accText = '', rafId = null;
+
+      const schedulePaint = () => {
+        if (rafId !== null) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          const stick = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 60 && stream.scrollTop > 0;
+          bodyEl.innerHTML = renderAnswer(accText, turnPrefix, null);
+          if (stick) stream.scrollTop = stream.scrollHeight;
+          if (tFirst !== null) {
+            const sec = Math.max(0.05, (performance.now() - tFirst) / 1000);
+            const tps = Math.round(Math.max(1, Math.ceil(accText.length / 4)) / sec);
+            setTopStatus('streaming', `<strong>${((tFirst - t0) / 1000).toFixed(1)}s</strong> ttft · <strong>${tps}</strong> t/s · ${effort}`);
+          }
+        });
+      };
+      const onDelta = (chunk) => { if (tFirst === null) tFirst = performance.now(); accText += chunk; schedulePaint(); };
+      const onUsage = (usage, simulated) => setCachePill(usage, simulated);
+
+      try {
+        const result = await (state.runMode === 'sim'
+          ? runSimulatedTurn({ prompt, isCoding, onDelta, onUsage })
+          : runLiveClaudeTurn({ isCoding, effort, requestMessages, onDelta, onUsage }));
+        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+
+        const tEnd = performance.now();
+        const ttft = ((tFirst || tEnd) - t0) / 1000;
+        const streamSec = Math.max(0.05, tFirst ? (tEnd - tFirst) / 1000 : 0.05);
+        const tps = Math.round(Math.max(1, Math.ceil(accText.length / 4)) / streamSec);
+
+        if (result.stopReason === 'refusal') {
+          bodyEl.innerHTML = (accText ? renderAnswer(accText, turnPrefix, null) : '') +
+            `<div class="note-box">The model declined this one (stop reason: refusal). Rephrase the question and try again. Nothing was saved to memory.</div>`;
+          setTopStatus('error', `Declined · ${effort}`);
+        } else if (!accText.trim()) {
+          bodyEl.innerHTML = `<div class="note-box">Empty reply${result.stopReason === 'max_tokens' ? ' — the token limit was used up by thinking. Try the Code effort pill or ask again.' : '.'}</div>`;
+          setTopStatus('error', `Empty · ${effort}`);
+        } else {
+          commitTurn(prompt, accText, bodyEl, turnPrefix);
+          if (result.stopReason === 'max_tokens') {
+            bodyEl.insertAdjacentHTML('beforeend', `<div class="note-box" style="margin-top:8px">Cut off at the token limit. Ask “continue” to get the rest.</div>`);
+          }
+          setTopStatus('', `<strong>${ttft.toFixed(1)}s</strong> ttft · <strong>${((tEnd - t0) / 1000).toFixed(1)}s</strong> · <strong>${tps}</strong> t/s · ${effort}`);
+        }
+      } catch (err) {
+        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+        if (err && err.name === 'AbortError') {
+          bodyEl.innerHTML = accText ? renderAnswer(accText, turnPrefix, null) : `<span class="thinking-line">Stopped.</span>`;
+          setTopStatus('', `Stopped · ${effort}`);
+        } else if (err && err.name === 'NoMatch') {
+          bodyEl.innerHTML = `<div class="note-box">${esc(err.message)}</div>`;
+          setTopStatus('', 'Offline bank · no match');
+        } else {
+          bodyEl.innerHTML = `<div class="err-box"><strong>Request failed</strong><code>${esc((err && err.message) || 'Unexpected error')}</code></div>`;
+          setTopStatus('error', `Error · ${effort}`);
+        }
+      } finally {
+        state.abortCtrl = null; state.simTimers = [];
+        setBusy(false); save();
+      }
+    }
+
+    /* ---------------- Permanent memory compression ---------------- */
+    const LEDGER_HEADERS = ['COMMITTED_FACTS', 'DEVIATIONS_AND_BRIDGES', 'CODING_AND_TECH_LOG', 'SENSITIVE_BOUNDARIES', 'INTERVIEWER_THREAD'];
+    const COMPRESSOR_PROMPT = `You are a strict, lossless interview-memory compressor. Merge the EXISTING PERMANENT MEMORY and NEW TURNS into one compact, deduplicated factual ledger.
+
+RULES:
+- Output ONLY structured bullet lines under the 5 headers below. No prose, no greetings, no code blocks.
+- Keep ONLY facts that matter for long-term consistency across a 6-hour or multi-day interview:
+  1. COMMITTED_FACTS: Exact dates, metrics, team sizes, projects, and specific claims stated by the candidate.
+  2. DEVIATIONS_AND_BRIDGES: Any modest extrapolation or gap-fill made beyond the literal resume.
+  3. CODING_AND_TECH_LOG: 1-line summary per coding/technical topic (problem, approach, Big-O, clarified edge cases—never raw code).
+  4. SENSITIVE_BOUNDARIES: Any sensitive/high-risk question pushed back on or framed in relative terms.
+  5. INTERVIEWER_THREAD: Open follow-ups, interviewer constraints, or recurring focus areas.
+- Tag each new/updated fact with the session tag shown on its turn (e.g., [D1·R1] or [D2·R1]).
+- The candidate's answers are written as speech: strip all filler words, "..." pauses, pleasantries, and redundant phrasing, and convert spelled-out numbers and notation back to compact form ("fifty percent" -> 50%, "O of n" -> O(n), "P ninety-nine" -> p99).
+- Never drop previously committed numbers, dates, or sensitive-topic boundaries unless explicitly corrected in NEW TURNS.
+- Hard budget: keep the entire ledger concise and under 1,000 words (~1,200 tokens).`;
+
+    function turnsToText(msgs) {
+      return msgs.map((m) => `${m.tag || ''} ${m.role === 'user' ? 'Interviewer' : 'Candidate'}: ${m.content}`).join('\n\n');
+    }
+
+    function parseLedger(text) {
+      const sec = {};
+      LEDGER_HEADERS.forEach((h) => { sec[h] = []; });
+      let cur = null;
+      (text || '').split('\n').forEach((line) => {
+        const t = line.trim();
+        const h = LEDGER_HEADERS.find((x) => t.replace(/[#*:\d.\s]/g, '') === x.replace(/_/g, '_'));
+        if (h) { cur = h; return; }
+        if (cur && t && t !== '- (none)') sec[cur].push(t.startsWith('-') ? t : '- ' + t);
+      });
+      return sec;
+    }
+
+    function offlineCompress(existing, msgs) {
+      const sec = parseLedger(existing);
+      const clean = (s) => s.replace(/```[\s\S]*?```/g, ' ').replace(/^>.*$/gm, ' ').replace(/\.{3,}|…/g, ' ')
+        .replace(/\b(so|yeah so|sure|okay so|hmm|oh and|i think|i guess|like,|honestly)\b[,]?/gi, ' ').replace(/\s+/g, ' ').trim();
+      const short = (s, n) => (s.length > n ? s.slice(0, n - 1).trim() + '…' : s);
+      for (let i = 0; i + 1 < msgs.length; i += 2) {
+        if (msgs[i].role !== 'user') { i--; continue; }
+        const tag = msgs[i].tag || sessionTag();
+        const q = short(msgs[i].content.replace(/\s+/g, ' '), 90);
+        const a = msgs[i + 1].content;
+        const plain = clean(a);
+        const first = short((plain.match(/[^.?!]+[.?!]?/g) || [plain]).slice(0, 2).join(' ').trim(), 220);
+        if (a.includes(FENCE)) {
+          const cx = (plain.match(/[^.]*\bO of [^.]*\./i) || [''])[0].trim();
+          sec.CODING_AND_TECH_LOG.push(`- ${tag} ${q} — ${short(cx || first, 160)}`);
+        } else if (/\b(millennium|visa|nus|jump|my team|i built|i owned|i led|our order|incident|percent)\b/i.test(plain)) {
+          sec.COMMITTED_FACTS.push(`- ${tag} ${q} — ${first}`);
+        } else {
+          sec.CODING_AND_TECH_LOG.push(`- ${tag} ${q} — ${short(first, 160)}`);
+        }
+        sec.INTERVIEWER_THREAD.push(`- ${tag} Asked: ${q}`);
+      }
+      LEDGER_HEADERS.forEach((h) => {
+        const seen = new Set();
+        sec[h] = sec[h].filter((l) => { const k = l.replace(/^- \[[^\]]*\]\s*/, ''); if (seen.has(k)) return false; seen.add(k); return true; });
+      });
+      sec.INTERVIEWER_THREAD = sec.INTERVIEWER_THREAD.slice(-10);
+      sec.CODING_AND_TECH_LOG = sec.CODING_AND_TECH_LOG.slice(-24);
+      return LEDGER_HEADERS.map((h) => `${h}:\n${sec[h].length ? sec[h].join('\n') : '- (none)'}`).join('\n\n');
+    }
+
+    async function liveCompress(existing, msgs) {
+      const body = {
+        model: state.compModel,
+        max_tokens: 8000,                    // thinking counts toward this; a full ledger alone is about 1,500
+        output_config: { effort: 'low' },
+        system: COMPRESSOR_PROMPT,
+        messages: [{
+          role: 'user',
+          content: `EXISTING PERMANENT MEMORY:\n${existing.trim() || '(empty)'}\n\nNEW TURNS:\n${turnsToText(msgs)}`
+        }]
+      };
+      let res;
+      try {
+        res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
+      } catch (_) {
+        throw new Error('Network/CORS error during compression.');
+      }
+      if (!res.ok) throw await apiError(res);
+      const j = await res.json();
+      if (j.stop_reason === 'refusal') throw new Error('The compressor model declined this batch.');
+      if (j.stop_reason === 'max_tokens') throw new Error('The compressed ledger was cut off, so the old one was kept.');
+      const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+      if (!text) throw new Error('Compressor returned no text.');
+      return text.replace(/^```[a-z]*\n?|\n?```$/g, '').trim();
+    }
+
+    async function compressMemory(reason, forcedMsgs) {
+      const memStatus = (t, warn) => { const el = $('memStatus'); el.textContent = t; el.classList.toggle('warn', !!warn); };
+      if (state.compressing) { memStatus('Compression already running…'); return; }
+      const count = forcedMsgs ? forcedMsgs.length : state.uncompressed;
+      const msgs = forcedMsgs || state.history.slice(-count);
+      if (!msgs.length) { memStatus('Nothing new to compress.'); return; }
+      if (state.runMode === 'live' && !state.apiKey.trim()) { memStatus('Add an API key in ⚙ Settings to compress in Live mode.', true); return; }
+
+      state.compressing = true;
+      updateBadges();
+      memStatus(`Compressing ${msgs.length / 2 | 0} turn(s)…`);
+      try {
+        const old = state.permanentMemory;
+        const next = state.runMode === 'sim' ? offlineCompress(old, msgs) : await liveCompress(old, msgs);
+        state.snapshots.unshift({ ts: Date.now(), tag: sessionTag(), memory: old });
+        state.snapshots = state.snapshots.slice(0, 10);
+        state.permanentMemory = next;
+        if (!forcedMsgs) {
+          state.uncompressed = Math.max(0, state.uncompressed - count);
+          state.history = state.history.slice(-Math.max(KEEP_AFTER_COMPRESS, state.uncompressed));
+        }
+        save();
+        memStatus(`Compressed (${reason}) at ${new Date().toLocaleTimeString()} · about ${estTokens(next)} tokens. Block 2 cache rewrites on the next request.`);
+      } catch (err) {
+        memStatus(`Compression failed: ${(err && err.message) || err}. Turns stay pending.`, true);
+      } finally {
+        state.compressing = false;
+        updateBadges(); refreshMemoryModal(true);
+      }
+    }
+
+    function saveMemoryEdit() {
+      const val = $('memEditor').value.trim();
+      if (val === state.permanentMemory.trim()) return;
+      state.snapshots.unshift({ ts: Date.now(), tag: sessionTag(), memory: state.permanentMemory });
+      state.snapshots = state.snapshots.slice(0, 10);
+      state.permanentMemory = val;
+      save(); refreshMemoryModal(true);
+      $('memStatus').textContent = 'Ledger saved.';
+    }
+    function undoCompression() {
+      if (!state.snapshots.length) return;
+      state.permanentMemory = state.snapshots.shift().memory;
+      save(); refreshMemoryModal(true);
+      $('memStatus').textContent = 'Restored the previous ledger. Turns already flushed from the buffer are not restored.';
+    }
+    function startFreshCurrent() {
+      state.permanentMemory = ''; state.snapshots = []; state.history = []; state.uncompressed = 0;
+      state.lastCode = null; state.curLabel = ''; state.curDate = todayStr();
+    }
+    function wipeMemory() {
+      if (!confirm('Clear the current interview: its ledger, undo snapshots, rolling buffer and the day/round counter? Saved interviews and the resume stay.')) return;
+      startFreshCurrent();
+      state.dayNum = 1; state.roundNum = 1; state.sameDay = true;
+      resetStats(true);
+      save(); syncSessionUI(); updateBadges(); refreshMemoryModal(true);
+      memNote('Current interview cleared.');
+    }
+
+    /* ---------------- Saved interviews (memory library) ---------------- */
+    const memNote = (t, warn) => { const el = $('memStatus'); el.textContent = t; el.classList.toggle('warn', !!warn); };
+    const newId = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const findEntry = (id) => state.library.find((e) => e.id === id);
+    const cleanEntry = (e, fallbackLabel) => ({
+      id: newId(),
+      label: String(e.label || fallbackLabel || 'Untitled interview').slice(0, 80),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(e.date || '') ? e.date : '',
+      memory: String(e.memory || '').trim(),
+      active: e.active !== false,
+      savedAt: e.savedAt || Date.now()
+    });
+
+    function setCurMeta() {
+      state.curLabel = $('curLabel').value.trim();
+      state.curDate = $('curDate').value || todayStr();
+      save(); refreshMemoryModal(false);
+    }
+
+    async function saveInterview() {
+      if (state.busy || state.compressing) { memNote('Wait for the current answer or compression to finish.', true); return; }
+      setCurMeta();
+      saveMemoryEdit();                                   // keep anything typed into the ledger box
+      if (state.uncompressed > 0) {
+        await compressMemory('save');                     // fold the turns not yet in the ledger
+        if (state.uncompressed > 0) { memNote('Could not fold the pending turns into the ledger, so nothing was saved. Fix the error above and try again.', true); return; }
+      }
+      if (!state.permanentMemory.trim()) { memNote('Nothing to save yet: this interview has no turns and an empty ledger.', true); return; }
+      const entry = cleanEntry({ label: state.curLabel || `Interview ${state.library.length + 1}`, date: state.curDate, memory: state.permanentMemory });
+      state.library.push(entry);
+      startFreshCurrent();
+      save(); updateBadges(); refreshMemoryModal(true);
+      memNote(`Saved “${entry.label}” (${entry.date}). A new empty interview is now current; the saved one stays ticked as memory.`);
+    }
+
+    function renderLibrary() {
+      const list = $('libList');
+      if (!state.library.length) {
+        list.innerHTML = '<div class="lib-empty">No saved interviews yet. Tap <strong>Save interview</strong> after a session, or <strong>Upload</strong> an exported file.</div>';
+        return;
+      }
+      list.innerHTML = state.library.map((e, i) => `
+        <div class="lib-item${e.active ? '' : ' off'}" id="lib-${e.id}">
+          <div class="lib-top">
+            <label class="lib-on"><input type="checkbox" ${e.active ? 'checked' : ''} onchange="toggleEntry('${e.id}', this.checked)" aria-label="Send as memory" />#${i + 1}</label>
+            <input class="text-input sans lib-label" value="${esc(e.label)}" placeholder="Label" autocomplete="off" onchange="renameEntry('${e.id}', this.value)" />
+            <input class="text-input sans lib-date" type="date" value="${esc(e.date)}" onchange="dateEntry('${e.id}', this.value)" />
+          </div>
+          <details><summary>Ledger · about ${fmtK(estTokens(e.memory))} tokens · tap to view or edit</summary>
+            <textarea class="textarea sm" spellcheck="false" onchange="editEntryMemory('${e.id}', this.value)">${esc(e.memory)}</textarea>
+          </details>
+          <div class="lib-btns">
+            <button class="btn-top" ${i === 0 ? 'disabled' : ''} onclick="moveEntry('${e.id}', -1)" aria-label="Move earlier">↑</button>
+            <button class="btn-top" ${i === state.library.length - 1 ? 'disabled' : ''} onclick="moveEntry('${e.id}', 1)" aria-label="Move later">↓</button>
+            <button class="btn-top" onclick="exportEntry('${e.id}')">Export</button>
+            <button class="btn-top danger" onclick="removeEntry('${e.id}')">Remove</button>
+          </div>
+        </div>`).join('');
+    }
+    function libraryChanged(rerender) {
+      save();
+      if (rerender) renderLibrary();
+      refreshMemoryModal(false);
+    }
+    function toggleEntry(id, on) {
+      const e = findEntry(id); if (!e) return;
+      e.active = on;
+      $('lib-' + id).classList.toggle('off', !on);
+      libraryChanged(false);
+    }
+    function renameEntry(id, v) { const e = findEntry(id); if (e) { e.label = v.trim().slice(0, 80) || 'Untitled interview'; libraryChanged(false); } }
+    function dateEntry(id, v) { const e = findEntry(id); if (e) { e.date = v; libraryChanged(false); } }
+    function editEntryMemory(id, v) { const e = findEntry(id); if (e) { e.memory = v.trim(); libraryChanged(false); memNote(`Ledger of “${e.label}” updated.`); } }
+    function moveEntry(id, dir) {
+      const i = state.library.findIndex((e) => e.id === id), j = i + dir;
+      if (i < 0 || j < 0 || j >= state.library.length) return;
+      const [e] = state.library.splice(i, 1);
+      state.library.splice(j, 0, e);
+      libraryChanged(true);
+    }
+    function sortLibraryByDate() {
+      // stable: interviews on the same date keep the order you gave them; undated ones go last
+      state.library = state.library.map((e, i) => ({ e, i }))
+        .sort((a, b) => (a.e.date || '9999').localeCompare(b.e.date || '9999') || a.i - b.i).map((x) => x.e);
+      libraryChanged(true);
+      memNote('Sorted by date, oldest first.');
+    }
+    function removeEntry(id) {
+      const e = findEntry(id); if (!e) return;
+      if (!confirm(`Remove “${e.label}”${e.date ? ' (' + e.date + ')' : ''} from this device? Export it first if you want a copy. This cannot be undone.`)) return;
+      state.library = state.library.filter((x) => x.id !== id);
+      libraryChanged(true);
+      memNote(`Removed “${e.label}”.`);
+    }
+
+    function downloadJson(name, data) {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+    const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'interview';
+    function exportEntry(id) {
+      const e = findEntry(id); if (!e) return;
+      downloadJson(`interview_${e.date || 'undated'}_${slug(e.label)}.json`,
+        { type: 'interview_hud_interview', version: 2, label: e.label, date: e.date, memory: e.memory, savedAt: e.savedAt, exportedAt: new Date().toISOString() });
+    }
+    function exportAll() {
+      saveMemoryEdit();
+      const data = { type: 'interview_hud_backup', version: 2, exportedAt: new Date().toISOString() };
+      ['resume', 'library', 'curLabel', 'curDate', 'permanentMemory', 'snapshots', 'dayNum', 'roundNum', 'sameDay', 'stats', 'sessionStart', 'history', 'uncompressed']
+        .forEach((k) => { data[k] = state[k]; });
+      downloadJson(`interview_hud_backup_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`, data);
+    }
+
+    /* Upload never overwrites: every file becomes one or more saved interviews at the end of the list */
+    function uploadMemory(ev) {
+      const files = Array.from(ev.target.files || []);
+      ev.target.value = '';
+      if (!files.length) return;
+      let added = 0, failed = [];
+      const base = (n) => n.replace(/\.[^.]+$/, '');
+      const done = () => {
+        libraryChanged(true);
+        memNote(`Added ${added} interview(s)` + (failed.length ? `; could not read: ${failed.join(', ')}` : '') + '. Set labels and dates, then reorder with ↑ ↓.', failed.length > 0);
+      };
+      let pending = files.length;
+      files.forEach((file) => {
+        const rd = new FileReader();
+        rd.onerror = () => { failed.push(file.name); if (--pending === 0) done(); };
+        rd.onload = () => {
+          const text = String(rd.result || '');
+          try {
+            let data = null;
+            try { data = JSON.parse(text); } catch (_) {}
+            const add = (e, fb) => { const c = cleanEntry(e, fb); if (c.memory) { state.library.push(c); added++; } };
+            if (data && typeof data === 'object') {
+              if (Array.isArray(data.library)) data.library.forEach((e) => add(e, base(file.name)));
+              if (typeof data.memory === 'string') add(data, base(file.name));
+              else if (typeof data.permanentMemory === 'string') add({ label: data.curLabel || base(file.name), date: data.curDate, memory: data.permanentMemory }, base(file.name));
+              if (!Array.isArray(data.library) && typeof data.memory !== 'string' && typeof data.permanentMemory !== 'string') throw new Error('no memory in file');
+            } else if (text.trim()) {
+              add({ label: base(file.name), memory: text }, base(file.name));      // plain text ledger
+            } else throw new Error('empty file');
+          } catch (_) { failed.push(file.name); }
+          if (--pending === 0) done();
+        };
+        rd.readAsText(file);
+      });
+    }
+    function resetStats(silent) {
+      state.stats = { read: 0, write: 0, input: 0, turns: 0 };
+      state.sessionStart = Date.now();
+      if (!silent) { save(); refreshMemoryModal(false); }
+    }
+    let memTimer = null;
+    function refreshMemoryModal(resetEditor) {
+      if (resetEditor) {
+        $('memEditor').value = state.permanentMemory;
+        $('curLabel').value = state.curLabel;
+        $('curDate').value = state.curDate;
+        renderLibrary();
+      }
+      $('stMem').textContent = fmtK(estTokens(memoryBlockText()));
+      $('stPend').textContent = String(state.uncompressed / 2 | 0);
+      const tot = state.stats.read + state.stats.write + state.stats.input;
+      $('stHit').textContent = tot ? Math.round((state.stats.read / tot) * 100) + '%' : '—';
+      const s = Math.max(0, Math.floor((Date.now() - state.sessionStart) / 1000));
+      $('stTime').textContent = `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+      $('undoBtn').textContent = `Undo last (${state.snapshots.length})`;
+    }
+    function updateBadges() {
+      const b = $('memBadge');
+      const pending = state.uncompressed / 2 | 0;
+      b.style.display = state.compressing || pending ? '' : 'none';
+      b.textContent = state.compressing ? '…' : String(pending);
+    }
+
+    /* ---------------- Session continuity ---------------- */
+    function syncSessionUI() {
+      $('day-same').classList.toggle('active', state.sameDay);
+      $('day-new').classList.toggle('active', !state.sameDay);
+      $('roundBtn').innerHTML = `D${state.dayNum}·R${state.roundNum} <span>+R</span>`;
+    }
+    function flushForBoundary() {
+      if (state.autoCompress && state.uncompressed > 0) compressMemory('boundary');
+    }
+    function setSameDay() {
+      state.sameDay = true;
+      save(); syncSessionUI();
+    }
+    function startNewDay(fromCue) {
+      if (!fromCue && !state.sameDay && !confirm(`Already marked New Day (Day ${state.dayNum}). Start Day ${state.dayNum + 1}?`)) return;
+      flushForBoundary();
+      state.dayNum += 1; state.roundNum = 1; state.sameDay = false;
+      save(); syncSessionUI();
+      setTopStatus('', `Day <strong>${state.dayNum}</strong> · New Day`);
+    }
+    function startNewRound() {
+      state.roundNum += 1;
+      save(); syncSessionUI();
+      setTopStatus('', `Day ${state.dayNum} · Round <strong>${state.roundNum}</strong>`);
+    }
+
+    /* ---------------- Bank modal ---------------- */
+    function renderBank() {
+      const f = $('bankSearch').value.trim().toLowerCase();
+      let html = '';
+      BANK.forEach((cat, ci) => {
+        const items = cat.items.map((it, ii) => ({ it, ii }))
+          .filter(({ it }) => !f || it.q.toLowerCase().includes(f) || it.keys.some((k) => k.includes(f)) || cat.title.toLowerCase().includes(f));
+        if (!items.length) return;
+        html += `<div class="bank-cat">${esc(cat.title)}</div><div class="bank-grid">` +
+          items.map(({ it, ii }) => `<button class="bank-q" onclick="pickBank(${ci}, ${ii})">${esc(it.q)}${it.body.includes(FENCE) ? '<small>spoken + code</small>' : ''}</button>`).join('') +
+          '</div>';
+      });
+      $('bankList').innerHTML = html || '<span class="hint">No question matches that filter.</span>';
+    }
+    function pickBank(ci, ii) {
+      closeModal('bankModal');
+      showBankAnswer(BANK[ci].items[ii]);
+    }
+
+    /* ---------------- Settings + misc UI ---------------- */
+    function updateCtxBadge() {
+      const m = state.runMode === 'sim' ? 'Offline' : 'Live';
+      const s = state.fastMode ? 'Fast' : 'Std';
+      const c = state.contextMode === 'smart' ? 'Smart' : (state.contextMode === 'resume_only' ? 'Mem only' : 'Full');
+      $('ctxBadge').textContent = `${m} · ${s} · ${state.cacheTtl} · ${c}`;
+    }
+    function syncSettingsUI() {
+      ['auto', 'low', 'medium'].forEach((k) => $('pill-' + k).classList.toggle('active', k === state.effortMode));
+      $('mode-sim').classList.toggle('active', state.runMode === 'sim');
+      $('mode-live').classList.toggle('active', state.runMode === 'live');
+      $('keyField').style.display = state.runMode === 'live' ? 'flex' : 'none';
+      $('spd-fast').classList.toggle('active', state.fastMode);
+      $('spd-std').classList.toggle('active', !state.fastMode);
+      $('ttl-1h').classList.toggle('active', state.cacheTtl === '1h');
+      $('ttl-5m').classList.toggle('active', state.cacheTtl === '5m');
+      $('cmp-haiku').classList.toggle('active', state.compModel === 'claude-haiku-5-5');
+      $('cmp-opus').classList.toggle('active', state.compModel === 'claude-opus-5-5');
+      $('autoCompressCheck').checked = state.autoCompress;
+      $('fallbackCheck').checked = state.fallbacks;
+      ['m', 'l', 'xl'].forEach((k) => $('ts-' + k).classList.toggle('active', k === state.textSize));
+      document.body.className = state.textSize === 'm' ? '' : 'ts-' + state.textSize;
+      document.querySelectorAll('input[name="ctxMode"]').forEach((r) => { r.checked = r.value === state.contextMode; });
+      updateCtxBadge();
+    }
+    const setAnd = (k, v) => { state[k] = v; save(); syncSettingsUI(); };
+    function setEffortMode(mode) { setAnd('effortMode', mode); }
+    function setRunMode(mode) { setAnd('runMode', mode); }
+    function setSpeedMode(isFast) { setAnd('fastMode', isFast); }
+    function setCacheTtl(ttl) { setAnd('cacheTtl', ttl); }
+    function setCompModel(m) { setAnd('compModel', m); }
+    function setContextMode(mode) { setAnd('contextMode', mode); }
+    function setTextSize(sz) { setAnd('textSize', sz); }
+    function onAutoCompressToggle() { setAnd('autoCompress', $('autoCompressCheck').checked); }
+    function onFallbackToggle() { setAnd('fallbacks', $('fallbackCheck').checked); }
+
+    function resumeHint() {
+      const v = $('resumeEditor').value;
+      $('resumeHint').textContent = `About ${fmtK(estTokens(v))} tokens. Locked into cached block 1 with the voice rules and the question bank, so dates, roles and metrics stay consistent.`;
+    }
+    function openModal(id) {
+      if (id === 'resumeModal') { $('resumeEditor').value = state.resume; resumeHint(); }
+      if (id === 'bankModal') { $('bankSearch').value = ''; renderBank(); }
+      if (id === 'memoryModal') {
+        refreshMemoryModal(true);
+        clearInterval(memTimer);
+        memTimer = setInterval(() => refreshMemoryModal(false), 1000);
+      }
+      $(id).classList.add('open');
+    }
+    function closeModal(id) {
+      $(id).classList.remove('open');
+      if (id === 'memoryModal') { clearInterval(memTimer); memTimer = null; }
+    }
+    function backdropClose(e, id) { if (e.target.id === id) closeModal(id); }
+
+    function saveAndLockResume() {
+      const val = $('resumeEditor').value.trim();
+      if (val) state.resume = val;
+      state.simWarm = false;
+      save(); closeModal('resumeModal');
+      setTopStatus('', 'Resume locked · Ready');
+    }
+    function resetResume() { $('resumeEditor').value = DEFAULT_RESUME; resumeHint(); }
+    function loadResumeFile(ev) {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file) return;
+      const rd = new FileReader();
+      rd.onload = () => { $('resumeEditor').value = String(rd.result).replace(/<\/?mark>/g, ''); resumeHint(); };
+      rd.readAsText(file);
+    }
+
+    function emptyHintHtml(msg) {
+      return `<div id="emptyHint" class="empty-hint">${msg}<br /><button class="btn-primary" onclick="openModal('bankModal')">Open question bank</button></div>`;
+    }
+    function clearChat() {
+      if (state.busy && state.abortCtrl) state.abortCtrl.abort();
+      if (state.uncompressed > 0 && state.autoCompress) {
+        compressMemory('clear', state.history.slice(-state.uncompressed));   // keep the facts, drop the raw turns
+      }
+      state.history = []; state.uncompressed = 0;
+      state.codeStore = Object.create(null); state.lastCode = null;
+      save(); updateBadges();
+      $('stream').innerHTML = emptyHintHtml('Screen cleared · resume and permanent memory intact');
+      setTopStatus('', 'Ready');
+    }
+
+    function storeKey() {
+      try {
+        if (state.saveToSession && state.apiKey) sessionStorage.setItem('opus_hud_key', state.apiKey);
+        else sessionStorage.removeItem('opus_hud_key');
+      } catch (_) {}
+      try {
+        if (state.saveToDevice && state.apiKey) localStorage.setItem('opus_hud_key_device', state.apiKey);
+        else localStorage.removeItem('opus_hud_key_device');
+      } catch (_) {}
+    }
+    function onKeyInput() { state.apiKey = $('apiKeyInput').value.trim(); storeKey(); }
+    function onSessionStoreToggle() { state.saveToSession = $('sessionStoreCheck').checked; storeKey(); }
+    function onDeviceStoreToggle() { state.saveToDevice = $('deviceStoreCheck').checked; storeKey(); }
+
+    /* ---------------- Live speed test ----------------
+       Runs real requests through runLiveClaudeTurn with temporary state, then restores everything.
+       "Hour-6 state" = what a request looks like late in a long session: memory ledger at its cap + full rolling window. */
+    const SPEED_STEPS = [
+      { phase: 'Fresh session', kind: 'first', label: 'First request', q: "What's the difference between a process and a thread?", setup: 'fresh' },
+      { phase: 'Fresh session', kind: 'quick', label: 'Quick technical', q: 'What does volatile not do in C++?' },
+      { phase: 'Fresh session', kind: 'talk', label: 'Behavioral', q: 'Tell me about a disagreement with a researcher or a teammate.' },
+      { phase: 'Fresh session', kind: 'code', label: 'Coding, new problem', q: 'Implement an LRU cache in Python.', coding: true },
+      { phase: 'Fresh session', kind: 'edit', label: 'Coding follow-up edit', q: 'Can you make it thread-safe?', coding: true, followup: true },
+      { phase: 'Fresh session', kind: 'quick', label: 'Quick, right after coding', q: "What's a page fault?" },
+      { phase: 'Hour-6 state', kind: 'first', label: 'First turn after a compression', q: 'How does epoll differ from select?', setup: 'late' },
+      { phase: 'Hour-6 state', kind: 'quick', label: 'Quick technical', q: 'What is false sharing?' },
+      { phase: 'Hour-6 state', kind: 'talk', label: 'Behavioral', q: 'What are you looking for in your next role?' },
+      { phase: 'Hour-6 state', kind: 'code', label: 'Coding, new problem', q: 'Write a function that returns the k-th largest element in a stream.', coding: true },
+      { phase: 'Hour-6 state', kind: 'quick', label: 'Quick, right after coding', q: "What's the difference between TCP and UDP?" },
+      { phase: 'Worst case', kind: 'worst', label: 'Quick, with 30 raw turns sent', q: 'What is a context switch?', setup: 'full' }
+    ];
+
+    function syntheticLedger() {
+      const sec = {};
+      LEDGER_HEADERS.forEach((h) => { sec[h] = []; });
+      sec.COMMITTED_FACTS.push(
+        '- [D1·R1] (speed-test ledger, synthetic) Millennium since May 2023; Visa Nov 2021–May 2023; about five years in total.',
+        '- [D1·R1] Order-path tuning: sustained throughput +50% inside the same p99 budget; metric agreed before any code changed.',
+        '- [D1·R2] Replay rig: 50k+ msgs/s sustained; 5 delivery and failover bugs caught in the first 6 months.',
+        '- [D1·R2] Regression suite about 10 h to about 4 h; pull requests get feedback in under an hour.',
+        '- [D2·R1] Post-trade checks surface breaks within about 5 minutes instead of next day.');
+      sec.DEVIATIONS_AND_BRIDGES.push('- [D1·R3] Said kernel bypass is home-lab experience only (two desktops, i210 NICs), not production.');
+      sec.SENSITIVE_BOUNDARIES.push('- [D1·R2] Declined exact latency budget and order rates; gave relative figures only.',
+        '- [D2·R1] Compensation: gave no number; said the work matters more than a counter-offer.');
+      BANK.forEach((c) => c.items.forEach((it, i) => {
+        sec.CODING_AND_TECH_LOG.push(`- [D${1 + (i % 2)}·R${1 + (i % 3)}] ${it.q} — answered as prepared; complexity and one edge case stated.`);
+      }));
+      const size = () => LEDGER_HEADERS.reduce((s, h) => s + sec[h].join('\n').length, 0);
+      for (let n = 1; size() < 4300; n++) {
+        sec.INTERVIEWER_THREAD.push(`- [D${1 + (n % 2)}·R${1 + (n % 4)}] Follow-up ${n}: pressed on trade-offs and edge cases; earlier figures and dates kept unchanged.`);
+      }
+      return LEDGER_HEADERS.map((h) => `${h}:\n${sec[h].join('\n')}`).join('\n\n');
+    }
+    function syntheticBuffer(turns) {
+      const items = BANK.reduce((all, c) => all.concat(c.items), []);
+      const out = [];
+      for (let i = 0; i < turns; i++) {
+        const it = items[i % items.length];
+        out.push({ role: 'user', content: it.q, tag: '[D1·R1]' }, { role: 'assistant', content: it.body, tag: '[D1·R1]' });
+      }
+      return out;
+    }
+
+    function renderSpeedTable() {
+      const cell = (r) => {
+        if (r.error) return `<td class="bad" colspan="6">${esc(r.error)}</td>`;
+        const cache = r.read ? `<td class="hit">HIT ${fmtK(r.read)}${r.write ? ' +W ' + fmtK(r.write) : ''}</td>`
+          : r.write ? `<td class="write">WRITE ${fmtK(r.write)}</td>` : '<td>none</td>';
+        return `<td>${r.effort}</td><td>${r.ttft.toFixed(2)}s</td><td>${r.total.toFixed(2)}s</td><td>${r.tps}</td>${cache}<td>${fmtK(r.input)}</td>`;
+      };
+      let html = '<tr><th>Step</th><th>Effort</th><th>First word</th><th>Done</th><th>t/s</th><th>Cache</th><th>Uncached in</th></tr>';
+      let phase = '';
+      speedTest.rows.forEach((r) => {
+        if (r.phase !== phase) { phase = r.phase; html += `<tr class="ph"><td colspan="7">${esc(phase)}</td></tr>`; }
+        html += `<tr><td>${esc(r.label)}</td>${cell(r)}</tr>`;
+      });
+      if (speedTest.compress) {
+        const c = speedTest.compress;
+        html += `<tr class="ph"><td colspan="7">Background</td></tr><tr><td>Memory compression (${esc(c.model)})</td>` +
+          (c.error ? `<td class="bad" colspan="6">${esc(c.error)}</td>` : `<td>low</td><td>—</td><td>${c.total.toFixed(2)}s</td><td>—</td><td>none</td><td>—</td>`) + '</tr>';
+      }
+      $('speedTable').innerHTML = speedTest.rows.length ? html : '';
+    }
+
+    function speedSummaryLines() {
+      const ok = speedTest.rows.filter((r) => !r.error);
+      const avg = (phase, kind) => {
+        const rs = ok.filter((r) => r.phase === phase && r.kind === kind);
+        if (!rs.length) return null;
+        return { ttft: rs.reduce((s, r) => s + r.ttft, 0) / rs.length, total: rs.reduce((s, r) => s + r.total, 0) / rs.length };
+      };
+      const lines = [];
+      [['quick', 'Quick answers'], ['talk', 'Behavioral'], ['code', 'Coding'], ['first', 'First turn / after a compression']].forEach(([kind, name]) => {
+        const a = avg('Fresh session', kind), b = avg('Hour-6 state', kind);
+        if (!a || !b) return;
+        const pct = Math.round((b.total / a.total - 1) * 100);
+        lines.push(`${name}: fresh ${a.ttft.toFixed(2)}s to first word, ${a.total.toFixed(2)}s done · hour-6 state ${b.ttft.toFixed(2)}s, ${b.total.toFixed(2)}s (${pct >= 0 ? '+' : ''}${pct}% total)`);
+      });
+      const w = avg('Worst case', 'worst');
+      if (w) lines.push(`Worst case, 30 raw turns sent: ${w.ttft.toFixed(2)}s to first word, ${w.total.toFixed(2)}s done`);
+      if (speedTest.compress && !speedTest.compress.error) lines.push(`Memory compression (${speedTest.compress.model}): ${speedTest.compress.total.toFixed(2)}s, runs in the background`);
+      return lines;
+    }
+    function speedResultsText() {
+      const head = `Interview HUD speed test · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC · ${state.fastMode ? 'Fast' : 'Standard'} · cache ${state.cacheTtl} · ${window.innerWidth}x${window.innerHeight}`;
+      const rows = speedTest.rows.map((r) => r.error
+        ? `${r.phase} | ${r.label} | ERROR ${r.error}`
+        : `${r.phase} | ${r.label} | ${r.effort} | first ${r.ttft.toFixed(2)}s | done ${r.total.toFixed(2)}s | ${r.tps} t/s | read ${r.read} write ${r.write} in ${r.input} out ${r.out}`);
+      return [head].concat(rows, [''], speedSummaryLines()).join('\n');
+    }
+    function copySpeedResults() {
+      if (!speedTest.rows.length) return;
+      state.codeStore.__speed = speedResultsText();
+      copyCode('__speed', $('speedCopyBtn'));
+      setTimeout(() => { $('speedCopyBtn').textContent = 'Copy results'; }, 1300);
+    }
+
+    async function runSpeedTest() {
+      if (speedTest.running) { speedTest.stop = true; if (state.abortCtrl) state.abortCtrl.abort(); return; }
+      const status = (t, warn) => { $('speedStatus').textContent = t; $('speedStatus').classList.toggle('warn', !!warn); };
+      if (state.busy) { status('Wait for the current answer to finish first.', true); return; }
+      if (!state.apiKey.trim()) { status('Paste your API key in ⚙ Settings first (Mode → Live Claude API).', true); return; }
+
+      const keep = { mem: state.permanentMemory, hist: state.history, unc: state.uncompressed, ctx: state.contextMode, last: state.lastCode, lib: state.library };
+      speedTest.running = true; speedTest.stop = false; speedTest.rows = []; speedTest.compress = null;
+      state.busy = true;
+      $('speedRunBtn').textContent = 'Stop test';
+      $('speedSummary').style.display = 'none';
+      renderSpeedTable();
+
+      try {
+        for (let i = 0; i < SPEED_STEPS.length && !speedTest.stop; i++) {
+          const st = SPEED_STEPS[i];
+          if (st.setup === 'fresh') { state.permanentMemory = ''; state.library = []; state.history = []; state.contextMode = 'smart'; state.lastCode = null; }
+          if (st.setup === 'late') { state.permanentMemory = syntheticLedger(); }
+          if (st.setup === 'full') { state.contextMode = 'full'; state.history = syntheticBuffer(30); state.lastCode = null; }
+          status(`Step ${i + 1} of ${SPEED_STEPS.length}: ${st.phase} · ${st.label}…`);
+
+          const cls = { isCoding: !!st.coding, effort: st.coding ? 'medium' : 'low', isFollowup: !!st.followup && !!state.lastCode };
+          const row = { phase: st.phase, kind: st.kind, label: st.label, effort: cls.effort };
+          const t0 = performance.now();
+          let tFirst = null, text = '', usage = {};
+          try {
+            const res = await runLiveClaudeTurn({
+              isCoding: cls.isCoding, effort: cls.effort, requestMessages: buildRequestMessages(st.q, cls),
+              onDelta: (c) => { if (tFirst === null) tFirst = performance.now(); text += c; },
+              onUsage: (u) => { usage = u; }
+            });
+            const tEnd = performance.now();
+            row.ttft = ((tFirst || tEnd) - t0) / 1000;
+            row.total = (tEnd - t0) / 1000;
+            row.tps = Math.round(Math.max(1, Math.ceil(text.length / 4)) / Math.max(0.05, (tEnd - (tFirst || tEnd)) / 1000));
+            row.read = usage.cache_read_input_tokens || 0;
+            row.write = usage.cache_creation_input_tokens || 0;
+            row.input = usage.input_tokens || 0;
+            row.out = res.outputTokens || 0;
+            if (res.stopReason === 'refusal') row.error = 'Declined by the model (refusal)';
+            state.history.push({ role: 'user', content: st.q, tag: '[D1·R1]' }, { role: 'assistant', content: text || '(no text)', tag: '[D1·R1]' });
+            const code = lastCodeOf(text);
+            if (code) state.lastCode = code;
+          } catch (err) {
+            if (err && err.name === 'AbortError') break;
+            row.error = (err && err.message) || 'Request failed';
+            speedTest.rows.push(row); renderSpeedTable();
+            if (err && (err.status === 401 || err.status === 403 || err.status === 429 || i === 0)) { speedTest.stop = true; break; }
+            continue;
+          } finally {
+            state.abortCtrl = null;
+          }
+          speedTest.rows.push(row);
+          renderSpeedTable();
+        }
+
+        if (!speedTest.stop && speedTest.rows.some((r) => !r.error)) {
+          status('Timing a background memory compression…');
+          const c = { model: state.compModel };
+          const t0 = performance.now();
+          try { await liveCompress(syntheticLedger(), syntheticBuffer(4)); c.total = (performance.now() - t0) / 1000; }
+          catch (err) { c.error = (err && err.message) || 'Compression failed'; }
+          speedTest.compress = c;
+        }
+      } finally {
+        state.permanentMemory = keep.mem; state.history = keep.hist; state.uncompressed = keep.unc;
+        state.contextMode = keep.ctx; state.lastCode = keep.last; state.library = keep.lib;
+        state.abortCtrl = null; state.busy = false;
+        speedTest.running = false;
+        save();
+        $('speedRunBtn').textContent = 'Run test';
+        renderSpeedTable();
+        const lines = speedSummaryLines();
+        if (lines.length) {
+          $('speedSummary').style.display = '';
+          $('speedSummary').innerHTML = lines.map((l) => esc(l).replace(/(-?\+?\d+(?:\.\d+)?(?:s|%))/g, '<b>$1</b>')).join('<br />') +
+            '<br /><span class="hint">One or two samples per cell, so expect some run-to-run noise. Tap Copy results to share the full table.</span>';
+        }
+        const failed = speedTest.rows.filter((r) => r.error).length;
+        status(speedTest.stop && !failed ? 'Stopped.' : failed ? `Finished with ${failed} failed step(s).` : 'Done. Your chat, memory and counters were not changed.', failed > 0);
+      }
+    }
+    function autoGrow(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 112) + 'px';
+    }
+    function onInputKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); onSendOrStop(); }
+    }
+
+    /* Keep the composer docked above the on-screen keyboard (iOS Safari, Android foldables) */
+    function fitViewport() {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const app = $('app');
+      app.style.height = vv.height + 'px';
+      app.style.top = vv.offsetTop + 'px';
+      document.documentElement.style.setProperty('--vvh', vv.height + 'px');   // modals stay above the keyboard too
+      document.documentElement.style.setProperty('--vvt', vv.offsetTop + 'px');
+      if (document.documentElement.scrollTop) window.scrollTo(0, 0);
+    }
+
+    (function init() {
+      load();
+      try {
+        const saved = sessionStorage.getItem('opus_hud_key');
+        if (saved) { state.apiKey = saved; state.saveToSession = true; $('apiKeyInput').value = saved; $('sessionStoreCheck').checked = true; }
+      } catch (_) {}
+      try {
+        const kept = localStorage.getItem('opus_hud_key_device');
+        if (kept) { state.apiKey = kept; state.saveToDevice = true; $('apiKeyInput').value = kept; $('deviceStoreCheck').checked = true; }
+      } catch (_) {}
+      $('workspaceInput').value = state.workspaceId;
+      syncSettingsUI(); syncSessionUI(); updateBadges();
+      const kept = state.history.length / 2 | 0;
+      $('stream').innerHTML = emptyHintHtml(
+        `Resume locked: <code>${state.resume.trim() === DEFAULT_RESUME ? 'Jump clean' : 'custom'}</code> · <code>${state.runMode === 'sim' ? 'Offline bank' : 'Live API'}</code> · <code>D${state.dayNum}·R${state.roundNum}</code>` +
+        (kept ? `<br />${kept} earlier turn(s) still in the rolling buffer.` : '') +
+        '<br />Type a question, or pick one from the bank.');
+      $('resumeEditor').addEventListener('input', resumeHint);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', fitViewport);
+        window.visualViewport.addEventListener('scroll', fitViewport);
+        fitViewport();
+      }
+      window.addEventListener('pagehide', save);
+
+      // Keep the screen on during a session (needs https or localhost; silently skipped elsewhere)
+      let wakeLock = null;
+      const keepAwake = async () => {
+        try {
+          if ('wakeLock' in navigator && document.visibilityState === 'visible' && !(wakeLock && !wakeLock.released)) {
+            wakeLock = await navigator.wakeLock.request('screen');
+          }
+        } catch (_) {}
+      };
+      document.addEventListener('visibilitychange', keepAwake);
+      document.addEventListener('pointerdown', keepAwake, { passive: true });
+      keepAwake();
+    })();
+  </script>
+</body>
+</html>
