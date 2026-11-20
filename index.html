@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#080b12" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#FAF9F5" />
   <!-- Lock-down: this page may only talk to api.anthropic.com (answers) and api.github.com (optional sync of saved interviews),
        and may not load any outside script, style, image or frame. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.anthropic.com https://api.github.com; img-src 'self' data:; manifest-src 'self'; form-action 'none'; base-uri 'none'" />
@@ -17,18 +17,18 @@
   <title>Interview HUD · Opus 5.5</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #080b12;
-      --surface: #111623;
-      --surface-2: #171e2f;
-      --border: #232d45;
-      --text: #e6edf7;
-      --muted: #8b99b5;
-      --accent: #38bdf8;
-      --ok: #34d399;
-      --warn: #fbbf24;
-      --err: #fb7185;
-      --code-bg: #0a0f1c;
+      color-scheme: light;
+      --bg: #FAF9F5;
+      --surface: #F0EEE6;
+      --surface-2: #E8E5DA;
+      --border: #D9D5C7;
+      --text: #1F1E1D;
+      --muted: #6F6D66;
+      --accent: #C96442;
+      --ok: #2F7D5B;
+      --warn: #A8690F;
+      --err: #BF3B33;
+      --code-bg: #FFFFFF;
       --say: 17.5px;
       --code: 12.5px;
       --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -70,7 +70,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      background: rgba(8, 11, 18, 0.96);
+      background: rgba(250, 249, 245, 0.97);
       border-bottom: 1px solid var(--border);
       z-index: 20;
     }
@@ -90,8 +90,8 @@
       padding: 3px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0;
       border: 1px solid var(--border); color: var(--muted);
     }
-    .cache-pill.hit { color: var(--ok); border-color: rgba(52, 211, 153, 0.5); background: rgba(52, 211, 153, 0.1); }
-    .cache-pill.write { color: var(--warn); border-color: rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.1); }
+    .cache-pill.hit { color: var(--ok); border-color: rgba(47, 125, 91, 0.5); background: rgba(47, 125, 91, 0.1); }
+    .cache-pill.write { color: var(--warn); border-color: rgba(168, 105, 15, 0.5); background: rgba(168, 105, 15, 0.1); }
     .top-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
     .btn-top {
       min-height: 38px; padding: 0 10px; border-radius: 9px;
@@ -101,9 +101,9 @@
     }
     .btn-top:active { background: var(--surface-2); transform: scale(0.97); }
     .btn-top.icon { width: 38px; padding: 0; font-size: 15px; }
-    .btn-top.danger { border-color: rgba(251, 113, 133, 0.5); color: #fecdd3; }
+    .btn-top.danger { border-color: rgba(191, 59, 51, 0.5); color: #9B2C2C; }
     .btn-top .badge {
-      font-family: var(--mono); font-size: 10px; font-weight: 700; color: #06101d;
+      font-family: var(--mono); font-size: 10px; font-weight: 700; color: #FFFFFF;
       background: var(--warn); border-radius: 999px; padding: 0 5px; line-height: 15px;
     }
     .wide-only { display: none; }
@@ -129,7 +129,7 @@
       align-self: flex-end; max-width: 92%;
       background: var(--surface-2); border: 1px solid var(--border);
       border-radius: 14px 14px 4px 14px; padding: 7px 12px;
-      font-size: 13.5px; color: #d6e2f5; white-space: pre-wrap; word-break: break-word;
+      font-size: 13.5px; color: #3D3C38; white-space: pre-wrap; word-break: break-word;
     }
     .user-pill .src {
       font-family: var(--mono); font-size: 10px; color: var(--accent);
@@ -147,24 +147,29 @@
       border-left: 2px solid var(--warn); padding-left: 8px; margin: 2px 0 0.6em;
     }
     .assistant-body ul, .assistant-body ol { margin: 4px 0 10px 20px; }
-    .assistant-body strong { color: #fff; font-weight: 600; }
+    .assistant-body strong { color: #000; font-weight: 600; }
     .assistant-body h4 {
       font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); margin: 10px 0 4px;
     }
     .assistant-body code.inline {
-      font-family: var(--mono); font-size: 0.82em; background: var(--surface-2); color: #7dd3fc;
+      font-family: var(--mono); font-size: 0.82em; background: var(--surface-2); color: #9C3D1F;
       padding: 1px 5px; border-radius: 4px;
     }
 
     /* Phone: approach → code → wrap-up in reading order. Wide: spoken left, code right. */
     .split { display: flex; flex-direction: column; gap: 10px; }
-    .col-say, .col-code { display: contents; }
+    .codewrap { min-width: 0; }
+    /* Code from earlier turns steps aside; tap its bar to bring it back */
+    .code-card.gone .code-scroll, .code-card.gone .code-btns { display: none; }
+    .code-card.gone .code-head { cursor: pointer; border-bottom: none; min-height: 36px; }
+    .code-card.gone .code-meta::after { content: ' · hidden · tap to show'; }
+    .code-card.pending { border-style: dashed; }
 
     .thinking-line { font-family: var(--mono); font-size: 12px; color: var(--warn); }
     .note-box, .err-box { border-radius: 10px; padding: 10px 12px; font-size: 13px; }
     .note-box { border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
-    .err-box { border: 1px solid rgba(251, 113, 133, 0.45); background: rgba(251, 113, 133, 0.1); color: #fecdd3; }
-    .err-box code { font-family: var(--mono); font-size: 12px; display: block; margin-top: 4px; color: #fda4af; }
+    .err-box { border: 1px solid rgba(191, 59, 51, 0.45); background: rgba(191, 59, 51, 0.1); color: #9B2C2C; }
+    .err-box code { font-family: var(--mono); font-size: 12px; display: block; margin-top: 4px; color: #9B2C2C; }
 
     /* ---------- Code card ---------- */
     .code-card { border-radius: 10px; border: 1px solid var(--border); background: var(--code-bg); overflow: hidden; min-width: 0; }
@@ -188,23 +193,23 @@
     .code-table { border-collapse: separate; border-spacing: 0; width: 100%; font-family: var(--mono); font-size: var(--code); line-height: 1.5; }
     .gutter {
       position: sticky; left: 0; z-index: 1;
-      background: var(--code-bg); color: #506180; text-align: right;
-      padding: 0 8px 0 6px; border-right: 1px solid #1b2438;
+      background: var(--code-bg); color: #A09D92; text-align: right;
+      padding: 0 8px 0 6px; border-right: 1px solid #E8E5DA;
       user-select: none; -webkit-user-select: none; width: 1%; white-space: nowrap; vertical-align: top;
     }
     .gutter .mk { display: inline-block; width: 0.9em; text-align: center; font-weight: 700; margin-right: 2px; }
-    .cline { padding: 0 12px 0 10px; white-space: pre; color: #e2e8f0; vertical-align: top; }
+    .cline { padding: 0 12px 0 10px; white-space: pre; color: #1F1E1D; vertical-align: top; }
     .code-card.wrap .cline { white-space: pre-wrap; overflow-wrap: anywhere; }
-    .tk-c { color: #5eead4; font-style: italic; }
-    .tk-k { color: #c084fc; font-weight: 500; }
-    .tk-s { color: #fcd34d; }
-    .tk-n { color: #fb923c; }
+    .tk-c { color: #2F7D5B; font-style: italic; }
+    .tk-k { color: #A8482B; font-weight: 500; }
+    .tk-s { color: #7A5C00; }
+    .tk-n { color: #20708F; }
 
     /* Diff rows */
-    tr.add .cline, tr.mod .cline { background: rgba(52, 211, 153, 0.14); }
-    tr.add .gutter, tr.mod .gutter { background: #0d2a25; color: var(--ok); box-shadow: inset 3px 0 0 #34d399; }
-    tr.del .cline { background: rgba(251, 113, 133, 0.10); color: #9a7d88; text-decoration: line-through; text-decoration-color: rgba(251, 113, 133, 0.5); }
-    tr.del .gutter { background: #2a121a; color: var(--err); box-shadow: inset 3px 0 0 rgba(251, 113, 133, 0.6); }
+    tr.add .cline, tr.mod .cline { background: rgba(47, 125, 91, 0.14); }
+    tr.add .gutter, tr.mod .gutter { background: #DDF1E6; color: var(--ok); box-shadow: inset 3px 0 0 #2F7D5B; }
+    tr.del .cline { background: rgba(191, 59, 51, 0.10); color: #A08A8A; text-decoration: line-through; text-decoration-color: rgba(191, 59, 51, 0.5); }
+    tr.del .gutter { background: #FBE9E7; color: var(--err); box-shadow: inset 3px 0 0 rgba(191, 59, 51, 0.6); }
     tr.del .tk-c, tr.del .tk-k, tr.del .tk-s, tr.del .tk-n { color: inherit; }
     tr.fold-div { display: none; cursor: pointer; }
     tr.fold-div .cline { color: var(--muted); font-family: var(--sans); font-size: 12px; padding-top: 7px; padding-bottom: 7px; background: var(--surface); }
@@ -214,7 +219,7 @@
 
     /* ---------- 3. Composer ---------- */
     .composer {
-      border-top: 1px solid var(--border); background: rgba(8, 11, 18, 0.97);
+      border-top: 1px solid var(--border); background: rgba(250, 249, 245, 0.97);
       padding: 7px max(10px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
       display: flex; flex-direction: column; gap: 7px; z-index: 20;
     }
@@ -224,9 +229,9 @@
       border: none; background: transparent; color: var(--muted);
       font-size: 12px; font-weight: 500; min-height: 36px; padding: 0 9px; border-radius: 8px; cursor: pointer; white-space: nowrap;
     }
-    .pill.active { background: rgba(56, 189, 248, 0.16); color: var(--accent); font-weight: 600; }
-    .pill.day.active { background: rgba(52, 211, 153, 0.16); color: var(--ok); }
-    .pill.day.newday.active { background: rgba(251, 191, 36, 0.16); color: var(--warn); }
+    .pill.active { background: rgba(201, 100, 66, 0.16); color: var(--accent); font-weight: 600; }
+    .pill.day.active { background: rgba(47, 125, 91, 0.16); color: var(--ok); }
+    .pill.day.newday.active { background: rgba(168, 105, 15, 0.16); color: var(--warn); }
     .round-btn {
       min-height: 40px; padding: 0 9px; border-radius: 10px; flex-shrink: 0;
       border: 1px solid var(--border); background: var(--surface); color: var(--text);
@@ -243,10 +248,10 @@
       padding: 10px 12px; color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.35; outline: none;
     }
     .prompt-input:focus { border-color: var(--accent); }
-    .prompt-input::placeholder { color: #5b6985; }
+    .prompt-input::placeholder { color: #A09D92; }
     .send-btn {
       height: 44px; min-width: 66px; padding: 0 14px; border: none; border-radius: 12px;
-      background: var(--accent); color: #06101d; font-size: 14px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+      background: var(--accent); color: #FFFFFF; font-size: 14px; font-weight: 700; cursor: pointer; flex-shrink: 0;
     }
     .send-btn:active { transform: scale(0.97); }
     .send-btn.stop { background: var(--err); color: #fff; }
@@ -254,7 +259,7 @@
     /* ---------- Modals ---------- */
     .modal-backdrop {
       position: fixed; left: 0; right: 0; top: var(--vvt, 0px); height: var(--vvh, 100dvh);
-      background: rgba(3, 6, 12, 0.78);
+      background: rgba(31, 30, 29, 0.45);
       display: none; align-items: flex-end; justify-content: center; z-index: 50;
       padding: calc(10px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
     }
@@ -269,7 +274,7 @@
     .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: sticky; top: -14px; background: var(--surface); padding: 6px 0; margin: -6px 0; z-index: 2; }
     .modal-title { font-size: 15px; font-weight: 700; }
     .field { display: flex; flex-direction: column; gap: 6px; }
-    .field > label, .field-label { font-size: 12px; font-weight: 600; color: #cbd5e1; }
+    .field > label, .field-label { font-size: 12px; font-weight: 600; color: #3D3C38; }
     .hint { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
     .hint.warn { color: var(--warn); }
     .textarea, .text-input {
@@ -286,7 +291,7 @@
       min-height: 42px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border);
       background: var(--bg); color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: center;
     }
-    .seg-btn.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.14); color: var(--accent); }
+    .seg-btn.active { border-color: var(--accent); background: rgba(201, 100, 66, 0.14); color: var(--accent); }
     .radio-stack { display: flex; flex-direction: column; gap: 6px; }
     .radio-opt {
       display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px; border-radius: 10px;
@@ -298,7 +303,7 @@
     .check-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); cursor: pointer; min-height: 36px; }
     .check-row input { accent-color: var(--accent); width: 18px; height: 18px; flex-shrink: 0; }
     .btn-primary {
-      min-height: 44px; border: none; border-radius: 10px; background: var(--accent); color: #06101d;
+      min-height: 44px; border: none; border-radius: 10px; background: var(--accent); color: #FFFFFF;
       font-size: 14px; font-weight: 700; cursor: pointer; padding: 0 14px;
     }
     .btn-primary:active { transform: scale(0.98); }
@@ -360,12 +365,7 @@
       .stream { padding-top: 14px; gap: 22px; }
       .user-pill { align-self: flex-start; border-radius: 4px 14px 14px 14px; max-width: 100%; }
       .say { max-width: 46em; }
-      .split {
-        display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-        column-gap: 16px; align-items: start;
-      }
-      .col-say, .col-code { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-      .col-say { position: sticky; top: 0; }
+      :root { --code: 13.5px; }
       .composer { flex-direction: row; align-items: flex-end; gap: 8px; }
       .ctl-row { flex-shrink: 0; height: 44px; }
       .spacer { display: none; }
@@ -1126,12 +1126,34 @@ So time's O of D times P... P is the number of passes... and space is still O of
     const CONCEPTUAL = /^\s*(why|what|what's|whats|explain|compare|difference|how does|how do|how would you debug|how is|tell me|walk me|describe|when|design|introduce|do you|have you|are you)\b/i;
     const FOLLOWUP = /\b(change|modify|update|optimi[sz]e|handle|what if|instead|make it|can you|could you|add|remove|fix|support|extend|refactor|rewrite|switch|without|thread.?safe|generali[sz]e|configurable|faster|less memory|edge case)\b/i;
 
+    /* Is this question about the code that is on screen right now?
+       Yes when it talks about code or names something from it, or is a short edit request that is clearly not personal.
+       "edit" says whether it asks for a change (medium effort) or only asks about the code (low effort). */
+    const CODE_TALK = /\b(code|line \d+|function|method|variable|loop|complexit\w*|big.?o|runtime|run time|time and space|edge cases?|test cases?|bug|(your|this|that|the) (solution|approach|implementation)|dry run|trace through|walk me through it)\b/i;
+    const PERSONAL = /\b(tell me about|about yourself|yourself|your (background|experience|resume|cv|team|role|job|manager|career|weakness|strength|project|current|previous|last)|why (jump|leave|leaving|are you|do you want|this (firm|company|role))|incident|disagree\w*|conflict|pressure|stress|motivat\w*|salary|compensation|notice period|non.?compete|millennium|visa|hobb\w+|outside work|years from now)\b/i;
+    const EDIT_VERB = /\b(change|modify|update|optimi[sz]e|handle|what if|instead|make it|add|remove|fix|support|extend|refactor|rewrite|switch|without|thread.?safe|generali[sz]e|configurable|faster|less memory|shorter|simpler|edge cases?)\b/i;
+    function codeRelation(t) {
+      if (!state.lastCode) return null;
+      const code = state.lastCode.lines.map((l) => l.replace(/(#|\/\/).*$/, '')).join('\n');
+      const names = (code.match(/[A-Za-z_][A-Za-z0-9_]{2,}/g) || [])
+        .filter((w) => /_|[a-z][A-Z]/.test(w) || (w.length >= 5 && !new RegExp(`^(${KEYWORDS})$`).test(w)));
+      const lower = t.toLowerCase();
+      const namesIt = [...new Set(names.map((w) => w.toLowerCase()))].some((w) => new RegExp(`\\b${w.replace(/[^a-z0-9_]/g, '')}\\b`).test(lower));
+      const edit = EDIT_VERB.test(t);
+      if (CODE_TALK.test(t)) return { edit };
+      if (PERSONAL.test(t)) return null;                  // about the person, not the code
+      if (namesIt) return { edit };
+      if (edit && t.split(/\s+/).length <= 14) return { edit: true };
+      return null;
+    }
+
     function classifyPrompt(text) {
       const t = text.trim();
-      const follow = !!state.lastCode && FOLLOWUP.test(t) && !/^\s*(why|explain|what is|what's the complexity|walk me)\b/i.test(t);
-      if (state.effortMode === 'low') return { isCoding: false, effort: 'low', isFollowup: false };
+      const rel = codeRelation(t);
+      const follow = !!rel;
+      if (state.effortMode === 'low') return { isCoding: follow, effort: 'low', isFollowup: follow };
       if (state.effortMode === 'medium') return { isCoding: true, effort: 'medium', isFollowup: follow };
-      if (follow) return { isCoding: true, effort: 'medium', isFollowup: true };
+      if (follow) return { isCoding: true, effort: rel.edit ? 'medium' : 'low', isFollowup: true };
       if (!EXPLICIT_CODE.test(t) && CONCEPTUAL.test(t)) return { isCoding: false, effort: 'low', isFollowup: false };
       const isCoding = CODING_PATTERNS.some((rx) => rx.test(t));
       return { isCoding, effort: isCoding ? 'medium' : 'low', isFollowup: false };
@@ -1162,6 +1184,7 @@ FORMAT BY QUESTION TYPE:
 - Fundamentals, internals, probability, behavioral and resume questions: one or two short spoken paragraphs.
 - Coding questions: first a spoken approach of two to four lines (thinking aloud is fine: "Okay so...", "Hmm..."). Then exactly one fenced code block with a language tag: the shortest standard solution, short plain comments on the key lines, lines under about 70 characters where practical. Then a spoken wrap-up: a quick check on the example if there is one, then time and space complexity, spelled out.
 - Coding follow-up edits: the message may include the current code under [CURRENT CODE]. Keep function names, structure and variable names wherever possible so the change is easy to spot. Say in one spoken line what changes, output the full updated code block, then a short spoken wrap-up.
+- Questions about the current code that need no change (its complexity, why a choice was made, a walk-through of an example): answer in spoken form only and do not print the code again; it is already on screen.
 - System design: say your assumptions, then the main structure, all spoken. Stop there and let the interviewer steer.
 - If the question is ambiguous or garbled, ask one brief clarifying question in the same voice instead of guessing.
 
@@ -1309,14 +1332,20 @@ ${bankAsExamples()}`;
       return { rows, summary, any: changed.length + removed > 0 };
     }
 
-    function renderCodeCard(lang, code, id, baseLines) {
+    /* Wrapped lines hang two columns past their own indent, so wrapped code still reads as code */
+    function hang(text) {
+      const k = text.match(/^[ \t]*/)[0].replace(/\t/g, '    ').length + 2;
+      return ` style="padding-left:calc(10px + ${k}ch);text-indent:-${k}ch"`;
+    }
+
+    function renderCodeCard(lang, code, id, baseLines, note) {
       const cleanLang = (lang || 'code').trim() || 'code';
       const trimmed = code.replace(/\r\n/g, '\n').replace(/\n+$/, '');
       const lines = trimmed.split('\n').map((l) => l.replace(/\s+$/, ''));
       state.codeStore[id] = lines.join('\n');
 
       const diff = baseLines ? diffRows(baseLines, lines) : null;
-      let rows = '', meta = `${esc(cleanLang)} · ${lines.length}L`, btns = '', cls = 'code-card';
+      let rows = '', meta = `${esc(cleanLang)} · ${lines.length}L`, btns = '', cls = 'code-card wrap' + (note === 'updating…' ? ' pending' : '');
 
       if (diff && diff.any) {
         // fold long unchanged stretches (2 context lines each side) for Changes mode
@@ -1339,20 +1368,20 @@ ${bankAsExamples()}`;
           }
           const mk = r.k === 'add' ? '+' : r.k === 'mod' ? '~' : r.k === 'del' ? '–' : '';
           const g = (mk ? `<span class="mk">${mk}</span>` : '') + (r.n === null ? '' : r.n);
-          rows += `<tr class="${r.k === 'same' ? '' : r.k}${hide[x] ? ' fold' : ''}"><td class="gutter">${g}</td><td class="cline">${highlightLine(r.text, cleanLang)}</td></tr>`;
+          rows += `<tr class="${r.k === 'same' ? '' : r.k}${hide[x] ? ' fold' : ''}"><td class="gutter">${g}</td><td class="cline"${hang(r.text)}>${highlightLine(r.text, cleanLang)}</td></tr>`;
         }
         meta += ` · <span class="upd">Updated ${esc(diff.summary)}</span>`;
-        const startChanges = window.innerWidth < 640;
-        if (startChanges) cls += ' changes';
-        btns += `<button class="code-btn${startChanges ? ' on' : ''}" onclick="toggleChanges(this)">${startChanges ? 'Changes' : 'Full'}</button>`;
+        // the whole new code stays on screen with the changed lines marked; "Changes" folds the rest away on request
+        btns += `<button class="code-btn" onclick="toggleChanges(this)">Full</button>`;
       } else {
         for (let i = 0; i < lines.length; i++) {
-          rows += `<tr><td class="gutter">${i + 1}</td><td class="cline">${highlightLine(lines[i], cleanLang)}</td></tr>`;
+          rows += `<tr><td class="gutter">${i + 1}</td><td class="cline"${hang(lines[i])}>${highlightLine(lines[i], cleanLang)}</td></tr>`;
         }
         if (diff) meta += ' · no changes';
       }
-      btns += `<button class="code-btn" onclick="toggleWrap(this)">Wrap</button><button class="code-btn" onclick="copyCode('${id}', this)">Copy</button>`;
-      return `<div class="${cls}"><div class="code-head"><span class="code-meta">${meta}</span><span class="code-btns">${btns}</span></div><div class="code-scroll"><table class="code-table"><tbody>${rows}</tbody></table></div></div>`;
+      if (note) meta += ` · ${esc(note)}`;
+      btns += `<button class="code-btn on" onclick="toggleWrap(this)">Wrap</button><button class="code-btn" onclick="copyCode('${id}', this)">Copy</button>`;
+      return `<div class="${cls}"><div class="code-head" onclick="this.parentElement.classList.remove('gone')"><span class="code-meta">${meta}</span><span class="code-btns">${btns}</span></div><div class="code-scroll"><table class="code-table"><tbody>${rows}</tbody></table></div></div>`;
     }
 
     function unfold(tr) {
@@ -1439,21 +1468,39 @@ ${bankAsExamples()}`;
       return segs.filter((s) => s.type === 'code' || s.text.trim());
     }
 
-    function renderAnswer(md, turnPrefix, baseLines) {
+    /* One column at every width: spoken approach, then the code full width and wrapped, then the spoken wrap-up.
+       opts.base  = previous code lines, to mark what changed.
+       opts.hold  = the code currently on screen ({lang, lines}) for a code-related follow-up: it stays in place
+                    while the answer streams, is swapped for the new code once that block is complete, and is kept
+                    unchanged if the answer brings no new code.
+       opts.final = the answer is complete. */
+    function renderAnswer(md, turnPrefix, opts) {
+      opts = opts || {};
       const segs = parseSegments(md);
-      if (!segs.some((s) => s.type === 'code')) {
+      const hold = opts.hold || null;
+      const lastCodeIdx = segs.map((s) => s.type).lastIndexOf('code');
+      if (lastCodeIdx === -1 && !hold) {
         return `<div class="say">${segs.map((s) => renderTextBlock(s.text)).join('')}</div>`;
       }
-      let say = '', code = '', blockIdx = 0;
+      const held = (note) => `<div class="codewrap">${renderCodeCard(hold.lang, hold.lines.join('\n'), `${turnPrefix}_base`, null, note)}</div>`;
+      let html = '', blockIdx = 0;
       segs.forEach((s, i) => {
-        if (s.type === 'code') {
-          const isLast = !segs.slice(i + 1).some((x) => x.type === 'code');
-          code += `<div style="order:${i};min-width:0">${renderCodeCard(s.lang, s.code, `${turnPrefix}_${blockIdx++}`, isLast ? baseLines : null)}</div>`;
-        } else {
-          say += `<div class="saychunk" style="order:${i}">${renderTextBlock(s.text)}</div>`;
-        }
+        if (s.type !== 'code') { html += `<div class="saychunk">${renderTextBlock(s.text)}</div>`; return; }
+        const isLast = i === lastCodeIdx;
+        if (isLast && hold && s.open && !opts.final) html += held('updating…');
+        else html += `<div class="codewrap">${renderCodeCard(s.lang, s.code, `${turnPrefix}_${blockIdx++}`, isLast ? (opts.base || (hold && hold.lines) || null) : null)}</div>`;
       });
-      return `<div class="split"><div class="col-say">${say}</div><div class="col-code">${code}</div></div>`;
+      if (lastCodeIdx === -1) html += held(opts.final ? 'unchanged' : 'current code');
+      return `<div class="split">${html}</div>`;
+    }
+
+    /* After a code update, bring the first changed line to the middle of the screen if it is out of view */
+    function centerFirstChange(bodyEl) {
+      const row = bodyEl.querySelector('tr.add, tr.mod, tr.del');
+      if (!row) return;
+      const stream = $('stream');
+      const r = row.getBoundingClientRect(), s = stream.getBoundingClientRect();
+      if (r.top < s.top + 40 || r.bottom > s.bottom - 40) stream.scrollTop += (r.top - s.top) - s.height / 2 + r.height / 2;
     }
 
     function lastCodeOf(md) {
@@ -1650,6 +1697,8 @@ ${bankAsExamples()}`;
       if (hint) hint.remove();
       const prev = stream.lastElementChild;
       if (prev) prev.style.minHeight = '';
+      // code from earlier turns steps aside; a code-related follow-up shows the current code again in its own turn
+      stream.querySelectorAll('.code-card').forEach((c) => c.classList.add('gone'));
 
       const turnEl = document.createElement('div');
       turnEl.className = 'turn';
@@ -1671,11 +1720,12 @@ ${bankAsExamples()}`;
       return { turnEl, bodyEl };
     }
 
-    function commitTurn(prompt, answer, bodyEl, turnPrefix) {
+    function commitTurn(prompt, answer, bodyEl, turnPrefix, hold) {
       const fresh = lastCodeOf(answer);
       const base = fresh && state.lastCode ? state.lastCode.lines : null;
-      bodyEl.innerHTML = renderAnswer(answer, turnPrefix, base);
+      bodyEl.innerHTML = renderAnswer(answer, turnPrefix, { base, hold: fresh ? null : (hold || null), final: true });
       if (fresh) state.lastCode = fresh;
+      centerFirstChange(bodyEl);
 
       const tag = sessionTag();
       state.history.push({ role: 'user', content: prompt, tag });
@@ -1716,10 +1766,12 @@ ${bankAsExamples()}`;
       const { isCoding, effort } = cls;
       const requestMessages = buildRequestMessages(prompt, cls);
       const { bodyEl } = newTurnEl(prompt, '');
-      bodyEl.innerHTML = `<span class="thinking-line">Thinking (${effort})…</span>`;
-
       const stream = $('stream');
       const turnPrefix = 'c' + (++state.codeCounter);
+      // code-related follow-up: the code on screen stays put until the answer says what replaces it
+      const hold = cls.isFollowup && state.lastCode ? { lang: state.lastCode.lang, lines: state.lastCode.lines.slice() } : null;
+      const heldCard = (note) => (hold ? `<div class="split" style="margin-top:10px"><div class="codewrap">${renderCodeCard(hold.lang, hold.lines.join('\n'), `${turnPrefix}_base`, null, note)}</div></div>` : '');
+      bodyEl.innerHTML = `<span class="thinking-line">Thinking (${effort})…</span>` + heldCard('current code');
       setBusy(true);
       setTopStatus('thinking', `Thinking… · <strong>${effort}</strong>`);
 
@@ -1730,9 +1782,8 @@ ${bankAsExamples()}`;
         if (rafId !== null) return;
         rafId = requestAnimationFrame(() => {
           rafId = null;
-          const stick = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 60 && stream.scrollTop > 0;
-          bodyEl.innerHTML = renderAnswer(accText, turnPrefix, null);
-          if (stick) stream.scrollTop = stream.scrollHeight;
+          // no auto-follow: the question stays at the top and the answer is read downward from there
+          bodyEl.innerHTML = renderAnswer(accText, turnPrefix, { hold });
           if (tFirst !== null) {
             const sec = Math.max(0.05, (performance.now() - tFirst) / 1000);
             const tps = Math.round(Math.max(1, Math.ceil(accText.length / 4)) / sec);
@@ -1755,14 +1806,14 @@ ${bankAsExamples()}`;
         const tps = Math.round(Math.max(1, Math.ceil(accText.length / 4)) / streamSec);
 
         if (result.stopReason === 'refusal') {
-          bodyEl.innerHTML = (accText ? renderAnswer(accText, turnPrefix, null) : '') +
+          bodyEl.innerHTML = (accText ? renderAnswer(accText, turnPrefix, { hold, final: true }) : heldCard('unchanged')) +
             `<div class="note-box">The model declined this one (stop reason: refusal). Rephrase the question and try again. Nothing was saved to memory.</div>`;
           setTopStatus('error', `Declined · ${effort}`);
         } else if (!accText.trim()) {
-          bodyEl.innerHTML = `<div class="note-box">Empty reply${result.stopReason === 'max_tokens' ? ' — the token limit was used up by thinking. Try the Code effort pill or ask again.' : '.'}</div>`;
+          bodyEl.innerHTML = `<div class="note-box">Empty reply${result.stopReason === 'max_tokens' ? ' — the token limit was used up by thinking. Try the Code effort pill or ask again.' : '.'}</div>` + heldCard('unchanged');
           setTopStatus('error', `Empty · ${effort}`);
         } else {
-          commitTurn(prompt, accText, bodyEl, turnPrefix);
+          commitTurn(prompt, accText, bodyEl, turnPrefix, hold);
           if (result.stopReason === 'max_tokens') {
             bodyEl.insertAdjacentHTML('beforeend', `<div class="note-box" style="margin-top:8px">Cut off at the token limit. Ask “continue” to get the rest.</div>`);
           }
@@ -1771,13 +1822,13 @@ ${bankAsExamples()}`;
       } catch (err) {
         if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
         if (err && err.name === 'AbortError') {
-          bodyEl.innerHTML = accText ? renderAnswer(accText, turnPrefix, null) : `<span class="thinking-line">Stopped.</span>`;
+          bodyEl.innerHTML = accText ? renderAnswer(accText, turnPrefix, { hold, final: true }) : `<span class="thinking-line">Stopped.</span>` + heldCard('unchanged');
           setTopStatus('', `Stopped · ${effort}`);
         } else if (err && err.name === 'NoMatch') {
-          bodyEl.innerHTML = `<div class="note-box">${esc(err.message)}</div>`;
+          bodyEl.innerHTML = `<div class="note-box">${esc(err.message)}</div>` + heldCard('unchanged');
           setTopStatus('', 'Offline bank · no match');
         } else {
-          bodyEl.innerHTML = `<div class="err-box"><strong>Request failed</strong><code>${esc((err && err.message) || 'Unexpected error')}</code></div>`;
+          bodyEl.innerHTML = `<div class="err-box"><strong>Request failed</strong><code>${esc((err && err.message) || 'Unexpected error')}</code></div>` + heldCard('unchanged');
           setTopStatus('error', `Error · ${effort}`);
         }
       } finally {
