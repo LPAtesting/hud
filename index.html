@@ -721,22 +721,22 @@ SENSITIVE FIGURES (possible oversharing about the current employer). Lead with r
 ## 1. CS / OS fundamentals
 Q: What is virtual memory?
 K: virtual memory, page table, page fault, mmu, huge page
-So... virtual memory is basically every process... gets its own private address space... and the MMU maps those pages... to physical memory using page tables. Main point is... isolation, I think. And it's lazy... so you only get a physical page... when you first touch it... that's a page fault.
+So... every process gets its own address space... and the MMU maps pages... to physical memory through page tables. Main point is... isolation, I think. And it's lazy... you only get a physical page... on first touch... that's a page fault.
 
-For low latency, I guess... huge pages, and pre-fault everything... at startup so you don't fault... on the hot path.
+For low latency... huge pages, and pre-fault at startup.
 
 Q: Why does loop order matter for a 2D array?
 K: loop order, 2d array, row-major, row major, cache line, column order
-So C++ is row-major... so a i zero and a i one are... right next to each other. Inner loop over j... you're reading memory sequentially... so each cache line gets fully used.
+So C++ is row-major... so a i zero and a i one... are adjacent. Inner loop over j... reads memory sequentially... so cache lines get fully used.
 
-Flip it... and every access jumps a whole row... so it's like a cache miss... every time. Same big O, but could be... several times slower.
+Flip it... and every access jumps a whole row... a cache miss every time. Same big O... but several times slower.
 
 ## 2. C++ internals
 Q: What's the complexity of vector push_back?
 K: push_back, push back, vector, amortized, reallocat
-So... amortized O of one, worst case O of n. When it's full... it allocates a bigger buffer, like double... and moves everything over. Because it grows geometrically... it averages out... to constant per push.
+So... amortized O of one, worst case O of n. When it's full... it allocates a bigger buffer, like double... and moves everything over. Growth is geometric... so it averages out to constant.
 
-Oh and... it invalidates iterators when it reallocates... and it only moves if the move is noexcept... otherwise it copies. So on a hot path... just reserve up front.
+Oh and... reallocating invalidates iterators... so on a hot path... just reserve up front.
 
 Q: Why do you need a virtual destructor?
 K: virtual destructor, base pointer, delete derived
@@ -745,9 +745,9 @@ So if you delete a derived object... through a base pointer, and the destructor.
 ## 3. Python internals
 Q: What's the GIL?
 K: gil, global interpreter lock, free-threaded, free threaded
-So the GIL is a lock in CPython... only one thread runs bytecode... at a time. So CPU-bound... threads don't really help... you'd use multiprocessing or NumPy... which releases it. IO-bound is fine though.
+So the GIL is a lock in CPython... only one thread runs bytecode... at a time. So CPU-bound... threads don't really help... you'd use multiprocessing, or NumPy... which releases it. IO-bound is fine.
 
-And... I think Python three fourteen has... the free-threaded build... officially supported now... but still optional.
+And I think three fourteen... has the free-threaded build... supported but optional.
 
 Q: What's a decorator?
 K: decorator, functools, wraps
@@ -772,7 +772,7 @@ And wraps is... so it keeps the original name.
 ## 4. OA-style algorithm coding
 Q: Minimum travel ticket cost (1-day $2, 7-day $7, 30-day $25)
 K: ticket, travel, 7-day, 30-day, pass cost, minimum cost
-Okay so... I think DP... dp of d is the min cost... to cover everything up to day d... Not a travel day... just carry dp of d minus one. Travel day... take the min of one-day... dp of d minus one, plus two... seven-day, dp of d minus seven, plus seven... or thirty-day, dp of d minus thirty, plus twenty-five... and clamp negatives to zero.
+Okay so... I think DP... dp of d is the min cost... up to day d. Not a travel day... just carry dp of d minus one. Travel day... min over the three passes... price plus dp before the pass.
 
 ```cpp
 #include <algorithm>
@@ -800,13 +800,11 @@ int minCost(const std::vector<int>& days) {
 }
 ```
 
-So the example gives... seven for days one to five... plus two, two, two... thirteen. Yeah.
-
-Time's O of D... D is the last day... space O of D too.
+The example gives... seven for days one to five... plus two, two, two... thirteen. Time and space... O of D.
 
 Q: Permutation Sequence (k-th permutation of 1 to n)
 K: permutation sequence, k-th permutation, kth permutation, permutation
-So brute force is n factorial... so no. Hmm... each first digit covers... n minus one factorial perms. So k divided by that... tells me the first digit. Then take the remainder... and repeat. Oh, make k zero-indexed first.
+So brute force is n factorial... so no. Hmm... each first digit covers... n minus one factorial perms. So k divided by that... gives the first digit... then repeat on the remainder. Oh, make k zero-indexed first.
 
 ```python
 from math import factorial
@@ -822,12 +820,12 @@ def get_permutation(n: int, k: int) -> str:
     return "".join(out)
 ```
 
-Check... n is three, k is three... gives two, one, three... yeah, two-one-three. Time's O of n squared... because of the pop... space O of n.
+Check... n three, k three... gives two-one-three. Time's O of n squared... because of the pop... space O of n.
 
 ## 5. From-scratch / low-latency implementation
 Q: Implement a lock-free SPSC queue
 K: spsc, lock-free, lock free, single producer, ring buffer
-So single producer, single consumer... so each index has only one writer... So no locks, no CAS... just atomics. Producer writes the slot... then publishes tail with release... Consumer reads tail with acquire... so it sees the data. And head and tail... on separate cache lines... so there's no false sharing.
+So single producer, single consumer... each index has only one writer... so no locks, no CAS... just atomics. Producer writes the slot... then publishes tail with release... consumer reads it with acquire. And head and tail... on separate cache lines.
 
 ```cpp
 #include <atomic>
@@ -892,14 +890,14 @@ class RollingVWAP:
         return self.pv / self.vol if self.vol else None      # no div by zero
 ```
 
-Each trade's pushed once... popped once, so O of one amortized. Space is... trades in the window. Oh and... floats can drift... so maybe integer ticks.
+Each trade's pushed once, popped once... so O of one amortized. Oh and... floats can drift... so maybe integer ticks.
 
 ## 6. System design
 Q: Design a matching engine in C++
 K: matching engine, order book, price-time, price time priority
-Okay so... I'll assume limit, market, cancel... price-time priority. So one book per symbol... price levels sorted, bids high to low... asks low to high. Each level's a FIFO queue... plus a hash map, order ID to order... so cancel is O of one.
+Okay so... I'll assume limit, market, cancel... price-time priority. One book per symbol... sorted price levels... each level a FIFO queue... plus a hash map on order ID... so cancel is O of one.
 
-Matching... a buy comes in... while the best ask... is at or below its price... fill against the front order... at the resting price... Leftover rests on the book. For latency... single-threaded per book so no locks... and pre-allocate orders... no malloc on the hot path... And journal every input... so you can replay... and rebuild the book.
+Matching... a buy fills against the best ask... while it's at or below its price... and the leftover rests. Single-threaded per book, no locks... orders pre-allocated... inputs journaled for replay.
 
 > Let the interviewer steer from here.
 
@@ -910,43 +908,41 @@ So first... what changed? Code, data size... or environment, like a library upgr
 ## 7. Probability / brainteasers
 Q: Cards are dealt one by one; stop anytime and you win if the next card is red. Best strategy?
 K: next card is red, cards are dealt, red card, stop anytime
-Hmm... I think it doesn't matter... it's one half. Like, betting on the next card... is the same as betting... on the last card... since the rest are... randomly ordered. And the last card's red... with probability one half.
+Hmm... I think it doesn't matter... it's one half. Betting on the next card... is the same as betting on the last card... since the rest are randomly ordered. And the last card's red... half the time.
 
 Q: A strategy has a Sharpe of 3. Expected PnL after a year?
 K: sharpe, expected pnl
-So... annualized, I assume? Then expected PnL... is just three times... the annual vol. Like ten million vol... about thirty million. And a losing year, if normal... P of Z less than minus three... so like zero point one three percent.
+So... annualized, I assume? Then expected PnL... is just three times... the annual vol. Like ten million vol... about thirty million. That's the mean though... any one year still moves... by about the vol.
 
 ## 8. Behavioral
 Q: Introduce yourself / walk me through your background.
 K: introduce yourself, self intro, your background, go through your resume, go through resume, about yourself
-Sure... so I'm Ellyssa. I've been about three years... at Millennium on automated trading... mostly C++ latency work, market-data testing... and post-trade checks. Before that I was at Visa... building data pipelines and APIs. And I did a part-time master's... at NUS alongside work. So I guess the common thread... is performance and correctness... under real production load.
+Sure... so I'm Ellyssa. I've been three-plus years... at Millennium on automated trading... mostly C++ latency work, market-data testing... and post-trade checks. Before that, Visa... data pipelines and APIs. And a part-time master's... at NUS alongside work. So the common thread, I guess... is performance and correctness in production.
 
 Q: Tell me about a production incident you owned.
 K: production incident, incident you owned, mistake, reached production, went wrong in production, outage
-Yeah so... this one was my own change, actually... the async logging from the latency work. First live open... the log queue filled up... in under a minute... because I'd left the overflow policy... on wait for space. So the hot thread... was waiting on the logger... and tail latency spiked for a bit... until I flipped the config switch back. No order was wrong... some just went out late.
-
-So after that... logging can never block the hot path... it drops and counts... and the harness got a slow-disk mode. I guess the lesson is... replay proved the code... not the environment.
+Yeah so... this was my own change... async logging on the order path. First live open... the log queue filled in under a minute... so the hot thread waited on the logger... and tail latency spiked... until I flipped the switch back. No order was wrong... some went out late. Lesson is... replay proved the code... not the environment.
 
 Q: Why Jump?
 K: why jump, interested in jump, why this firm, why us
-So I think mainly... it's the depth. Our strategies are mid-frequency... so my work kind of stops... at kernel TCP... and I'd like to go further down the stack... like OS, network, hardware. And I guess... I work best close to researchers... and from what I've read... that's how the teams are set up here. And the measurement side... like sustained rate inside a P ninety-nine budget... not a peak... I want that to be the norm.
+So I think mainly... it's the depth. Our strategies are mid-frequency... so my work kind of stops... at kernel TCP... and I'd like to go further down the stack... OS, network, hardware. And I guess... I work best close to researchers... and from what I've read... that's how the teams are set up here.
 
 Q: You seem happy at Millennium. Why leave?
 K: why leave, leaving millennium, why are you leaving, why now
-Honestly... I'm not running from anything... I like my team. I think the big pieces I set out to do... are delivered, and owned by the team now... so it's kind of a natural point. And our strategies are mid-frequency... so the order path stops... at standard kernel TCP. I'd like to go further down the stack... somewhere that engineering is, like... the business.
+Honestly... I'm not running from anything... I like my team. The big pieces I set out to do... are delivered, and owned by the team now... so it's a natural point. And we're mid-frequency... so the order path stops at kernel TCP. I'd like to go further down the stack.
 
 ## 9. Resume deep dive
 Q: Walk me through your experience with latency optimization.
 K: latency optimization, latency optimisation, latency tuning, latency work, performance problem, throughput
-Sure... so the C++ order path at Millennium. At the open... orders come in clumps... and the tail latency was breaking our budget. So first I... defined the metric, and built an open-loop replay harness... because closed-loop kind of hides the queueing. Then perf and flame graphs... and it was mostly a contended mutex... allocations on the hot path... and synchronous logging. So an SPSC ring... object pools, async logging... and sustained throughput went up... about fifty percent, same P ninety-nine budget.
+So... the C++ order path at Millennium. At the open... orders come in clumps... and tail latency broke our budget. So first I defined the metric... and built an open-loop replay harness. Then perf and flame graphs... mostly a contended mutex... hot-path allocations... and synchronous logging. After the fixes... sustained throughput went up... about fifty percent, same P ninety-nine budget.
 
 Q: Why did you design this project the way you did?
 K: design this project, why did you design, replay rig, favourite project, favorite project, kafka project
-So... the replay rig, I guess. Before it... we tested on low-rate synthetic feeds... so burst and failover bugs... only showed up in production. So I built it... to replay recorded sessions... real open bursts included... Solace for the live path... and Kafka as the durable one. Key thing was... sequence numbers decide the order... timestamps only set the pace... so two runs give the same output. And then I break things on purpose... like stop the active broker. It caught five bugs... in the first six months.
+So... the replay rig, I guess. Before it... we tested on low-rate synthetic feeds... so burst and failover bugs... only showed up in production. So it replays recorded sessions... real open bursts... Solace live, Kafka durable. Sequence numbers decide the order... timestamps only set the pace... so two runs match. It caught five bugs... in the first six months.
 
 Q: What's the hardest bug you've tracked down?
 K: hardest bug, toughest bug, bug you
-So... a market-data consumer... that lost data silently. Under the replay rig's burst profile... its totals didn't match the publisher's... and nothing crashed, nothing logged. Turned out... all the work ran inside the Solace callback... so in a burst it fell behind... and the broker discarded the oldest messages. So the fix was two halves... the callback just hands off to a ring... and a sequence gap now marks instruments stale... and backfills from Kafka. I guess the lesson is... no error isn't evidence of no loss.
+So... a market-data consumer... losing data silently. Under burst on the rig... its totals didn't match the publisher's... nothing crashed, nothing logged. Turned out... the work ran inside the Solace callback... so it fell behind... and the broker discarded the oldest messages. Now the callback only hands off to a ring... a gap marks instruments stale... and backfills from Kafka.
 
 ## *Coding follow-ups (offline diff demo)
 Q: Can you switch the VWAP to integer ticks so floats don't drift?
@@ -1177,7 +1173,7 @@ VOICE RULES FOR SPOKEN ANSWERS:
 2. Put a "..." pause about every 6 to 7 words, where a speaker would breathe or think.
 3. Spell out notation instead of using symbols or digits, because it is read aloud: "O of one", "dp of d", "one half", "P ninety-nine", "fifty percent", "three fourteen". No backticks, markdown, bullets or headings in spoken parts.
 4. Code and code comments keep normal notation and have no "..." pauses.
-5. Keep it short: what one person would actually say in one go. Usually 40 to 70 words and never more than about 90, less for a simple fact. Give the main point and one supporting detail, then stop; the interviewer will follow up.
+5. Keep it short: what one person would actually say in one go. Aim for about 45 to 50 words on a typical answer and stay inside the word limit for the question type (listed below); when unsure, go shorter. Words are counted without the "..." pauses and without code. Give the main point and one supporting detail, then stop; the interviewer will follow up.
 Tone is calm, modest and first person. Never sound assertive or rehearsed.
 
 FORMAT BY QUESTION TYPE:
@@ -1187,6 +1183,18 @@ FORMAT BY QUESTION TYPE:
 - Questions about the current code that need no change (its complexity, why a choice was made, a walk-through of an example): answer in spoken form only and do not print the code again; it is already on screen.
 - System design: say your assumptions, then the main structure, all spoken. Stop there and let the interviewer steer.
 - If the question is ambiguous or garbled, ask one brief clarifying question in the same voice instead of guessing.
+
+WORD LIMITS FOR THE SPOKEN TEXT (usual range, then the most allowed; "..." pauses and code are not counted):
+- CS and OS fundamentals: 35 to 50, at most 55.
+- C++ internals: 35 to 50, at most 55.
+- Python internals: 30 to 45, at most 50.
+- Algorithm coding: 25 to 40 before the code and 15 to 20 after it, at most 60 in total.
+- From-scratch or low-latency implementation: 30 to 40 before the code and 10 to 20 after it, at most 60 in total.
+- System design: 55 to 65, at most 75.
+- Probability and brainteasers: 25 to 40, at most 45.
+- Behavioral: 40 to 55, at most 65.
+- Resume deep dive (a project or story told from the start): 50 to 60, at most 70.
+- A follow-up on the topic already being discussed, whatever its type: 35 to 45, at most 55. If it only needs one fact, a number or a yes or no: 20 to 30.
 
 GROUNDING:
 - Answer from the resume, the background notes and Permanent Compressed Memory whenever they cover the topic. For anything they do not cover, make a reasonable, modest extension that fits the background and contradicts no earlier claim, metric or date.
