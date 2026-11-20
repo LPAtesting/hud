@@ -7,9 +7,9 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#080b12" />
-  <!-- Lock-down: this page may only talk to api.anthropic.com and may not load any outside script, style, image or frame.
-       Even if something unexpected ran on the page, it could not send the API key to another server by a network call. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.anthropic.com; img-src 'self' data:; manifest-src 'self'; form-action 'none'; base-uri 'none'" />
+  <!-- Lock-down: this page may only talk to api.anthropic.com (answers) and api.github.com (optional sync of saved interviews),
+       and may not load any outside script, style, image or frame. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.anthropic.com https://api.github.com; img-src 'self' data:; manifest-src 'self'; form-action 'none'; base-uri 'none'" />
   <meta name="referrer" content="no-referrer" />
   <meta name="robots" content="noindex, nofollow" />
   <link rel="manifest" href="manifest.json" />
@@ -486,11 +486,13 @@
         <button class="btn-top" onclick="$('importFile').click()">Upload</button>
         <button class="btn-top" onclick="exportAll()">Export all</button>
         <button class="btn-top" onclick="sortLibraryByDate()">Sort by date</button>
-        <button class="btn-top" onclick="resetStats()">Reset stats</button>
+        <button class="btn-top" onclick="syncNow('manual')">Sync now</button>
       </div>
+      <span id="syncStatus2" class="hint">Sync is not set up on this device (⚙ Settings).</span>
       <div class="btn-row">
         <button class="btn-top danger" onclick="wipeMemory()">Clear current interview</button>
         <button class="btn-top" onclick="closeModal('memoryModal'); openModal('resumeModal')">Edit resume</button>
+        <button class="btn-top" onclick="resetStats()">Reset stats</button>
       </div>
       <input id="importFile" type="file" accept="application/json,.json,.txt,.md,text/plain" multiple style="display:none" onchange="uploadMemory(event)" />
       <span class="hint">Order is the timeline the model sees: use ↑ ↓ to reorder, including several interviews on one date. Untick an interview to leave it out without deleting it. <strong>Clear</strong> in the top bar only resets the screen and the short rolling buffer.</span>
@@ -591,6 +593,19 @@
           <input id="fallbackCheck" type="checkbox" onchange="onFallbackToggle()" />
           <span>Retry on another model if a safety classifier declines (server-side fallback, beta)</span>
         </label>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Sync saved interviews across devices (GitHub)</span>
+        <input id="ghRepoInput" type="text" class="text-input" placeholder="Private repo, e.g. LPAtesting/hud-data" autocomplete="off" autocapitalize="off" spellcheck="false" oninput="onSyncInput()" />
+        <input id="ghTokenInput" type="password" class="text-input" placeholder="GitHub token (github_pat_…)" autocomplete="off" oninput="onSyncInput()" />
+        <label class="check-row">
+          <input id="autoSyncCheck" type="checkbox" onchange="setAnd('autoSync', this.checked)" />
+          <span>Sync automatically when the app opens and after saving or editing an interview</span>
+        </label>
+        <button class="btn-top" style="min-height:42px" onclick="syncNow('manual')">Sync now</button>
+        <span id="syncStatus" class="hint">Not set up on this device.</span>
+        <span class="hint warn">The token is stored unencrypted in this browser. Use a fine-grained token limited to that one private repo with “Contents: read and write”. Your Claude key and the interview in progress are never synced.</span>
       </div>
 
       <div class="field">
@@ -1054,21 +1069,28 @@ So time's O of D times P... P is the number of passes... and space is still O of
       library: [], curLabel: '', curDate: todayStr(), workspaceId: '',
       stats: { read: 0, write: 0, input: 0, turns: 0 }, sessionStart: Date.now(),
       busy: false, compressing: false, abortCtrl: null, simTimers: [],
-      codeStore: Object.create(null), codeCounter: 0, lastCode: null, simWarm: false
+      codeStore: Object.create(null), codeCounter: 0, lastCode: null, simWarm: false,
+      // sync bookkeeping: change stamps, tombstones for removed interviews, and the GitHub repo to sync through
+      libDeleted: {}, libOrderAt: 0, libSeen: [], resumeAt: 0, resumeSig: '',
+      syncRepo: '', autoSync: true, lastSyncAt: 0, ghToken: '', syncing: false, syncAgain: false, applyingSync: false
     };
     const PERSIST = ['resume', 'runMode', 'fastMode', 'effortMode', 'contextMode', 'cacheTtl', 'compModel', 'autoCompress',
       'fallbacks', 'textSize', 'history', 'uncompressed', 'permanentMemory', 'snapshots', 'dayNum', 'roundNum', 'sameDay',
-      'stats', 'sessionStart', 'library', 'curLabel', 'curDate', 'workspaceId'];
+      'stats', 'sessionStart', 'library', 'curLabel', 'curDate', 'workspaceId',
+      'libDeleted', 'libOrderAt', 'libSeen', 'resumeAt', 'resumeSig', 'syncRepo', 'autoSync', 'lastSyncAt'];
 
     const speedTest = { running: false, stop: false, rows: [], compress: null };
 
     function save() {
       if (speedTest.running) return;       // the speed test swaps in temporary state; never persist that
+      const changed = stampLibrary();
       try {
         const out = {};
         PERSIST.forEach((k) => { out[k] = state[k]; });
+        if (state.resume.trim() === DEFAULT_RESUME) out.resume = null;   // keep following the built-in resume when the app is updated
         localStorage.setItem(LS_KEY, JSON.stringify(out));
       } catch (_) {}
+      if (changed && !state.applyingSync) queueSync();
     }
     function load() {
       try {
@@ -1083,6 +1105,8 @@ So time's O of D times P... P is the number of passes... and space is still O of
         // an untouched current interview always carries today's real date
         if (!String(state.permanentMemory).trim() && !state.history.length) state.curDate = todayStr();
         if (!/^\d{4}-\d{2}-\d{2}$/.test(state.curDate || '')) state.curDate = todayStr();
+        if (!state.libDeleted || typeof state.libDeleted !== 'object') state.libDeleted = {};
+        if (!Array.isArray(state.libSeen)) state.libSeen = [];
       } catch (_) {}
     }
 
@@ -2068,6 +2092,209 @@ RULES:
       state.sessionStart = Date.now();
       if (!silent) { save(); refreshMemoryModal(false); }
     }
+    /* ---------------- Sync saved interviews through a private GitHub repo ----------------
+       One JSON file (hud-sync.json) in the repo holds the saved interviews, their order and the resume background.
+       Every sync is pull → merge → push, so two devices never overwrite each other:
+       per interview the newer edit wins, removals are remembered, and the newer ordering wins.
+       The interview in progress and both secrets (Claude key, GitHub token) never leave the device. */
+    const SYNC_FILE = 'hud-sync.json';
+    let syncTimer = null;
+
+    function hashStr(s) {
+      let h = 2166136261;
+      for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return (h >>> 0).toString(36);
+    }
+    function sigOf(e) { return hashStr([e.label, e.date, e.active ? 1 : 0, e.memory].join('\u0001')); }
+
+    /* Notice what changed since the last save and time-stamp it. Returns true when something did. */
+    function stampLibrary() {
+      const now = Date.now();
+      let changed = false;
+      state.library.forEach((e) => { const s = sigOf(e); if (e.sig !== s) { e.sig = s; e.updatedAt = now; changed = true; } });
+      const ids = state.library.map((e) => e.id), seen = state.libSeen || [];
+      seen.forEach((id) => { if (!ids.includes(id)) { state.libDeleted[id] = now; changed = true; } });
+      if (ids.join() !== seen.join()) { state.libOrderAt = now; state.libSeen = ids; changed = true; }
+      const rs = hashStr(state.resume.trim());
+      if (state.resumeSig !== rs) {
+        // a device still on the built-in resume must never look "newer" than a custom one on another device
+        state.resumeAt = (state.resumeSig === '' && state.resume.trim() === DEFAULT_RESUME) ? 0 : now;
+        state.resumeSig = rs; changed = true;
+      }
+      return changed;
+    }
+
+    function repoSlug() { return state.syncRepo.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, ''); }
+    function syncReady() { return !!state.ghToken && /^[^/\s]+\/[^/\s]+$/.test(repoSlug()); }
+    function syncNote(t, warn) {
+      ['syncStatus', 'syncStatus2'].forEach((id) => { const el = $(id); if (el) { el.textContent = t; el.classList.toggle('warn', !!warn); } });
+    }
+    function b64encode(str) {
+      const bytes = new TextEncoder().encode(str);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(bin);
+    }
+    function b64decode(b64) { return new TextDecoder().decode(Uint8Array.from(atob(String(b64).replace(/\s/g, '')), (c) => c.charCodeAt(0))); }
+
+    const plainEntry = (e) => ({ id: e.id, label: e.label, date: e.date || '', memory: e.memory, active: e.active !== false, savedAt: e.savedAt || 0, updatedAt: e.updatedAt || 0 });
+    const emptyDoc = () => ({ entries: [], deleted: {}, order: [], orderAt: 0, resume: { text: null, at: 0 } });
+    function localDoc() {
+      return {
+        entries: state.library.map(plainEntry), deleted: Object.assign({}, state.libDeleted),
+        order: state.library.map((e) => e.id), orderAt: state.libOrderAt || 0,
+        resume: { text: state.resume.trim() === DEFAULT_RESUME ? null : state.resume, at: state.resumeAt || 0 }
+      };
+    }
+    function parseDoc(text) {
+      let d;
+      try { d = JSON.parse(text) || {}; } catch (_) { throw new Error('the sync file in the repo is not valid JSON'); }
+      const entries = (Array.isArray(d.entries) ? d.entries : []).filter((e) => e && e.id && typeof e.memory === 'string').map(plainEntry);
+      const r = d.resume && typeof d.resume === 'object' ? d.resume : {};
+      return {
+        entries, deleted: d.deleted && typeof d.deleted === 'object' ? d.deleted : {},
+        order: Array.isArray(d.order) ? d.order : entries.map((e) => e.id), orderAt: d.orderAt || 0,
+        resume: { text: typeof r.text === 'string' ? r.text : null, at: r.at || 0 }
+      };
+    }
+    const canon = (d) => JSON.stringify([d.entries, Object.keys(d.deleted).sort().map((k) => [k, d.deleted[k]]), d.orderAt, d.resume]);
+
+    function mergeSync(local, remote) {
+      const deleted = Object.assign({}, remote.deleted);
+      Object.keys(local.deleted).forEach((id) => { if (!(deleted[id] >= local.deleted[id])) deleted[id] = local.deleted[id]; });
+      const byId = new Map();
+      const put = (e) => { const cur = byId.get(e.id); if (!cur || e.updatedAt > cur.updatedAt) byId.set(e.id, e); };
+      remote.entries.forEach(put); local.entries.forEach(put);
+      Object.keys(deleted).forEach((id) => {
+        const e = byId.get(id);
+        if (!e) return;
+        if (e.updatedAt <= deleted[id]) byId.delete(id);    // removed after its last edit: stays removed
+        else delete deleted[id];                            // edited after the removal: it comes back
+      });
+      const lead = remote.orderAt > local.orderAt ? remote : local, other = lead === remote ? local : remote;
+      const order = [];
+      lead.order.forEach((id) => { if (byId.has(id) && !order.includes(id)) order.push(id); });
+      // interviews the newer ordering has never seen slot in by the time they were saved, not at the end
+      const slot = (id) => {
+        if (!byId.has(id) || order.includes(id)) return;
+        const at = byId.get(id).savedAt || 0;
+        const i = order.findIndex((x) => (byId.get(x).savedAt || 0) > at);
+        if (i === -1) order.push(id); else order.splice(i, 0, id);
+      };
+      other.order.forEach(slot); byId.forEach((e, id) => slot(id));
+      return {
+        entries: order.map((id) => byId.get(id)), deleted, order,
+        orderAt: Math.max(local.orderAt, remote.orderAt),
+        resume: remote.resume.at > local.resume.at ? remote.resume : local.resume
+      };
+    }
+    function countDiff(from, merged) {
+      const have = new Map(from.entries.map((e) => [e.id, JSON.stringify(e)]));
+      let n = merged.entries.filter((e) => have.get(e.id) !== JSON.stringify(e)).length;
+      const kept = new Set(merged.entries.map((e) => e.id));
+      from.entries.forEach((e) => { if (!kept.has(e.id)) n++; });
+      return n;
+    }
+    function applyMerged(m) {
+      state.applyingSync = true;
+      state.library = m.entries.map((e) => { const x = Object.assign({}, e); x.sig = sigOf(x); return x; });
+      state.libDeleted = m.deleted; state.libOrderAt = m.orderAt; state.libSeen = m.order.slice();
+      let resumeChanged = false;
+      if (m.resume.at > (state.resumeAt || 0)) {
+        state.resume = m.resume.text || DEFAULT_RESUME; state.resumeAt = m.resume.at;
+        state.resumeSig = hashStr(state.resume.trim()); state.simWarm = false; resumeChanged = true;
+      }
+      save();
+      state.applyingSync = false;
+      return resumeChanged;
+    }
+
+    async function ghFile(method, body) {
+      const [owner, repo] = repoSlug().split('/');
+      const headers = { Authorization: 'Bearer ' + state.ghToken, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+      if (body) headers['Content-Type'] = 'application/json';
+      try {
+        return await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${SYNC_FILE}`,
+          { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+      } catch (_) {
+        throw new Error('could not reach api.github.com (offline?)');
+      }
+    }
+    async function ghError(res) {
+      let msg = '';
+      try { msg = (await res.json()).message || ''; } catch (_) {}
+      return new Error(
+        res.status === 401 ? 'GitHub rejected the token (expired or mistyped)'
+        : res.status === 403 ? `GitHub refused (${msg || 'the token needs Contents: read and write on this repo'})`
+        : res.status === 404 ? 'repo not found, or the token cannot see it. Check owner/name and that the token covers this repo'
+        : `GitHub error ${res.status}${msg ? ': ' + msg : ''}`);
+    }
+
+    function queueSync() {
+      if (!state.autoSync || !syncReady()) return;
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => syncNow('auto'), 2500);
+    }
+
+    async function syncNow(reason) {
+      if (!syncReady()) { syncNote('To sync, enter the repo (owner/name) and a GitHub token in ⚙ Settings.', reason === 'manual'); return; }
+      if (speedTest.running) return;
+      if (state.syncing) { state.syncAgain = true; return; }
+      state.syncing = true;
+      clearTimeout(syncTimer);
+      syncNote('Syncing…');
+      try {
+        let pulled = 0, pushed = 0, resumeChanged = false, ok = false;
+        for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+          const res = await ghFile('GET');
+          let remote = emptyDoc(), sha = null;
+          if (res.status === 200) {
+            const j = await res.json();
+            sha = j.sha;
+            if (!j.content && j.size) throw new Error('the sync file is too large for this method (over 1 MB)');
+            remote = parseDoc(b64decode(j.content || ''));
+          } else if (res.status !== 404) {
+            throw await ghError(res);
+          }
+          stampLibrary();
+          const local = localDoc();
+          const merged = mergeSync(local, remote);
+          pulled += countDiff(local, merged); pushed = countDiff(remote, merged);
+          resumeChanged = applyMerged(merged) || resumeChanged;
+          if (canon(merged) === canon(remote)) { ok = true; break; }
+          const body = {
+            message: `sync ${new Date().toISOString()}`,
+            content: b64encode(JSON.stringify(Object.assign({ type: 'interview_hud_sync', version: 1, updatedAt: Date.now() }, merged), null, 1))
+          };
+          if (sha) body.sha = sha;
+          const put = await ghFile('PUT', body);
+          if (put.ok) { ok = true; break; }
+          if (put.status !== 409 && put.status !== 422) throw await ghError(put);   // 409/422: the other device wrote first, so merge again
+        }
+        if (!ok) throw new Error('the repo kept changing while syncing; try again');
+        state.lastSyncAt = Date.now();
+        save();
+        if ($('memoryModal').classList.contains('open')) { if (pulled) renderLibrary(); refreshMemoryModal(false); }
+        syncNote(`Synced ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${state.library.length} saved interview(s)` +
+          ` · ${pulled} change(s) pulled, ${pushed} pushed` + (resumeChanged ? ' · resume updated from the other device' : ''));
+      } catch (err) {
+        syncNote(`Sync failed: ${(err && err.message) || err}. Nothing on this device was lost.`, true);
+      } finally {
+        state.syncing = false;
+        if (state.syncAgain) { state.syncAgain = false; queueSync(); }
+      }
+    }
+    function onSyncInput() {
+      state.syncRepo = $('ghRepoInput').value.trim();
+      state.ghToken = $('ghTokenInput').value.trim();
+      try {
+        if (state.ghToken) localStorage.setItem('opus_hud_gh_token', state.ghToken);
+        else localStorage.removeItem('opus_hud_gh_token');
+      } catch (_) {}
+      save();
+      syncNote(syncReady() ? 'Ready. Tap Sync now.' : 'Enter both the repo (owner/name) and the token.');
+    }
+
     let memTimer = null;
     function refreshMemoryModal(resetEditor) {
       if (resetEditor) {
@@ -2156,6 +2383,7 @@ RULES:
       $('cmp-opus').classList.toggle('active', state.compModel === 'claude-opus-5-5');
       $('autoCompressCheck').checked = state.autoCompress;
       $('fallbackCheck').checked = state.fallbacks;
+      $('autoSyncCheck').checked = state.autoSync;
       ['m', 'l', 'xl'].forEach((k) => $('ts-' + k).classList.toggle('active', k === state.textSize));
       document.body.className = state.textSize === 'm' ? '' : 'ts-' + state.textSize;
       document.querySelectorAll('input[name="ctxMode"]').forEach((r) => { r.checked = r.value === state.contextMode; });
@@ -2454,6 +2682,13 @@ RULES:
         if (kept) { state.apiKey = kept; state.saveToDevice = true; $('apiKeyInput').value = kept; $('deviceStoreCheck').checked = true; }
       } catch (_) {}
       $('workspaceInput').value = state.workspaceId;
+      try { state.ghToken = localStorage.getItem('opus_hud_gh_token') || ''; } catch (_) {}
+      $('ghRepoInput').value = state.syncRepo;
+      $('ghTokenInput').value = state.ghToken;
+      if (syncReady()) {
+        syncNote(state.lastSyncAt ? `Last synced ${new Date(state.lastSyncAt).toLocaleString()}.` : 'Ready. Not synced yet.');
+        if (state.autoSync) syncNow('open');
+      }
       syncSettingsUI(); syncSessionUI(); updateBadges();
       const kept = state.history.length / 2 | 0;
       $('stream').innerHTML = emptyHintHtml(
